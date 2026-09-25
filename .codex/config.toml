@@ -1,0 +1,12 @@
+# Project-local, offline structural code index. Installed and verified 2026-09-25.
+[mcp_servers.medpark_codegraph]
+command = 'C:\Users\vijay\AppData\Local\MedparkTools\codegraph\node_modules\@astudioplus\codegraph-mcp\bin\codegraph-server-win32-x64.exe'
+args = ['--mcp', '--workspace', 'F:\DEEPTECH', '--graph-only', '--profile', 'core', '--exclude', 'data', '--exclude', '.audit', '--exclude', '.venv', '--exclude', 'node_modules', '--exclude', 'dist', '--exclude', '.idea', '--exclude', '.codegraph']
+cwd = 'F:\DEEPTECH'
+startup_timeout_sec = 60
+tool_timeout_sec = 30
+enabled = true
+
+[mcp_servers.medpark_codegraph.env]
+CODEGRAPH_TELEMETRY = 'off'
+CODEGRAPH_SKIP_MODEL_FETCH = '1'

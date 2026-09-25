@@ -1,0 +1,55 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python cache & bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node & Frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+dist/
+build/
+.npm
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Medpark Local Storage & Audio Assets
+data/
+*.bin
+*.gguf
+*.pt
+*.onnx
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.webm
+*.pdf
+*.docx
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# IDE & Editor caches
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Audit & Analysis artifacts
+.audit/
+.codegraph/
+*.log

@@ -1,0 +1,118 @@
+{
+  "name": "Medpark Meeting Minutes Routing Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medpark-mom",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook Medpark MoM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.meeting_type }}",
+        "rules": {
+          "rules": [
+            {
+              "value2": "medical"
+            },
+            {
+              "value2": "executive"
+            },
+            {
+              "value2": "administrative"
+            }
+          ]
+        }
+      },
+      "id": "switch-node",
+      "name": "Meeting Type Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "minutes@medpark.md",
+        "toEmail": "={{ $json.recipients.join(', ') }}",
+        "subject": "=[MEDPARK MEDICAL] {{ $json.title }}",
+        "text": "Stimați Colegi,\n\nVă transmitem procesul-verbal oficial al Consiliului Medical Medpark.\n\nRezumat: {{ $json.summary_ro }}\nDecizii: {{ $json.decisions_count }}\nSarcini: {{ $json.actions_count }}\n\nDocumente atașate oficial."
+      },
+      "id": "smtp-medical",
+      "name": "SMTP Medical Board",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "fromEmail": "minutes@medpark.md",
+        "toEmail": "={{ $json.recipients.join(', ') }}",
+        "subject": "=[MEDPARK EXECUTIVE] {{ $json.title }}",
+        "text": "Stimați Membri ai Comitetului Director,\n\nProcesul-verbal al ședinței executive a fost aprobat.\n\nRezumat: {{ $json.summary_ro }}"
+      },
+      "id": "smtp-executive",
+      "name": "SMTP Executive Committee",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [720, 320]
+    },
+    {
+      "parameters": {
+        "fromEmail": "minutes@medpark.md",
+        "toEmail": "={{ $json.recipients.join(', ') }}",
+        "subject": "=[MEDPARK ADMIN] {{ $json.title }}",
+        "text": "Către departamentele operaționale,\n\nPlanul de acțiuni și decizii administrative Medpark a fost validat."
+      },
+      "id": "smtp-admin",
+      "name": "SMTP Administrative",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [720, 440]
+    }
+  ],
+  "connections": {
+    "Webhook Medpark MoM": {
+      "main": [
+        [
+          {
+            "node": "Meeting Type Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meeting Type Switch": {
+      "main": [
+        [
+          {
+            "node": "SMTP Medical Board",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SMTP Executive Committee",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SMTP Administrative",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

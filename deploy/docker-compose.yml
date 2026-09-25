@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  medpark-app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: medpark-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - OFFLINE_STRICT=true
+      - DISABLE_TELEMETRY=true
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook/medpark-mom
+      - N8N_ENABLED=true
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      - mailpit
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: medpark-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # Standard SMTP port
+      - "8025:8025"   # Web UI for jury inspection
+    environment:
+      - MP_MAX_MESSAGES=500
+      - MP_DATABASE=/data/mailpit.db
+    volumes:
+      - ../data/mailpit:/data
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: medpark-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_HIRING_BANNER_ENABLED=false
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=72
+    volumes:
+      - ../data/n8n:/home/node/.n8n
