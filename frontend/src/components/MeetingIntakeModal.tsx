@@ -83,7 +83,7 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
         <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-slate-900 text-base">Configure New Meeting Intake</h3>
-            <p className="text-xs text-slate-500">100% offline automated minutes for Medpark</p>
+            <p className="text-xs text-slate-500">Medora • 100% Offline Clinical Meeting Intelligence</p>
           </div>
           <button
             onClick={onClose}

@@ -720,7 +720,7 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
                           <Sparkles className="w-4 h-4 text-medpark-600" />
-                          <h3 className="font-bold text-sm text-slate-900">Medpark Executive Summary</h3>
+                          <h3 className="font-bold text-sm text-slate-900">Medora Executive Summary</h3>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                             Revision {minutes.revision}
                           </span>
