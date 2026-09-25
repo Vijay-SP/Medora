@@ -3,9 +3,9 @@ Medpark Meeting Intelligence System - Information Extraction Models
 Defines decisions, action items, evidence citations, deadlines, and minutes schemas.
 """
 
-from datetime import datetime
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from datetime import datetime, timezone
+from typing import Any, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 import uuid
 
 
@@ -62,10 +62,23 @@ class MinutesOfMeeting(BaseModel):
     action_items: list[ActionItem] = Field(default_factory=list)
     risks_and_questions: list[RiskOrQuestionItem] = Field(default_factory=list)
     
-    generated_at: datetime = Field(default_factory=datetime.now)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_version: str = Field(default="medpark-qwen-local")
     revision: int = 1
     
     # Document artifact references
     pdf_path: Optional[str] = None
     docx_path: Optional[str] = None
+
+    @field_validator("generated_at", mode="before")
+    @classmethod
+    def validate_generated_at(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        if isinstance(v, datetime):
+            if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v.astimezone(timezone.utc)
+        return v

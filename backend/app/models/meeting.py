@@ -3,11 +3,25 @@ Medpark Meeting Intelligence System - Meeting Domain Models
 Defines core meeting entities, statuses, attendee metadata, and workflow modes.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
 import uuid
+
+
+def _normalize_datetime(v: Any) -> Any:
+    """Normalizes naive/aware datetimes and ISO strings to timezone-aware UTC."""
+    if v is None:
+        return None
+    if isinstance(v, str):
+        v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+    if isinstance(v, datetime):
+        if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+    return v
+
 
 
 class MeetingType(str, Enum):
@@ -60,10 +74,15 @@ class MeetingBase(BaseModel):
     title: str = Field(..., min_length=3, max_length=200, example="Ședință Comitet Medical - Secția Chirurgie")
     meeting_type: MeetingType = Field(default=MeetingType.MEDICAL)
     workflow_mode: WorkflowMode = Field(default=WorkflowMode.SUPERVISED)
-    scheduled_at: datetime = Field(default_factory=datetime.now)
+    scheduled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attendees: list[Attendee] = Field(default_factory=list)
     agenda: Optional[str] = Field(None, description="Optional meeting topics or medical agenda")
     distribution_list: list[str] = Field(default_factory=list, description="Custom recipient emails (if overriding policy)")
+
+    @field_validator("scheduled_at", mode="before")
+    @classmethod
+    def validate_scheduled_at(cls, v: Any) -> Any:
+        return _normalize_datetime(v)
 
 
 class MeetingCreate(MeetingBase):
@@ -72,8 +91,8 @@ class MeetingCreate(MeetingBase):
 
 class Meeting(MeetingBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Audio Artifacts
     original_audio_path: Optional[str] = None
@@ -94,3 +113,8 @@ class Meeting(MeetingBase):
     # Timing benchmarks for scoring evaluation
     processing_time_seconds: float = 0.0
     error_message: Optional[str] = None
+
+    @field_validator("created_at", "updated_at", "approved_at", mode="before")
+    @classmethod
+    def validate_meeting_datetimes(cls, v: Any) -> Any:
+        return _normalize_datetime(v)

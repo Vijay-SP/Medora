@@ -3,10 +3,10 @@ Medpark Meeting Intelligence System - Delivery & Routing Models
 Manages meeting-type email distribution policies, local outbox queue, and SMTP tracking.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, field_validator
 import uuid
 
 
@@ -49,6 +49,19 @@ class DeliveryRecord(BaseModel):
     error_message: Optional[str] = None
     smtp_response_code: Optional[int] = None
     idempotency_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
+
+    @field_validator("sent_at", mode="before")
+    @classmethod
+    def validate_sent_at(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = datetime.fromisoformat(v.replace("Z", "+00:00"))
+        if isinstance(v, datetime):
+            if v.tzinfo is None or v.tzinfo.utcoffset(v) is None:
+                return v.replace(tzinfo=timezone.utc)
+            return v.astimezone(timezone.utc)
+        return v
 
 
 # Pre-configured hospital distribution policies as specified in challenge brief

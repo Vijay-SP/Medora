@@ -3,6 +3,7 @@ Medpark Meeting Intelligence System - Thread-Safe Atomic Persistence
 Maintains meeting state, transcripts, minutes, and delivery records locally.
 """
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from threading import RLock
@@ -13,6 +14,16 @@ from app.models.meeting import Meeting
 from app.models.transcript import Transcript
 from app.models.extraction import MinutesOfMeeting
 from app.models.delivery import DeliveryRecord
+
+
+def _normalize_datetime(dt: Optional[datetime]) -> datetime:
+    """Safely normalizes naive/aware datetimes to UTC for comparison and sorting."""
+    if dt is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 
 
 class MeetingRepository:
@@ -68,7 +79,7 @@ class MeetingRepository:
         with self.lock:
             data = self._read_json(self.meetings_file)
             meetings = [Meeting.model_validate(val) for val in data.values()]
-            meetings.sort(key=lambda m: m.scheduled_at, reverse=True)
+            meetings.sort(key=lambda m: _normalize_datetime(m.scheduled_at), reverse=True)
             return meetings
 
     def delete_meeting(self, meeting_id: str) -> bool:
@@ -122,7 +133,10 @@ class MeetingRepository:
             records = [DeliveryRecord.model_validate(val) for val in data.values()]
             if meeting_id:
                 records = [r for r in records if r.meeting_id == meeting_id]
-            records.sort(key=lambda r: r.sent_at or r.id, reverse=True)
+            records.sort(
+                key=lambda r: (_normalize_datetime(r.sent_at), r.id),
+                reverse=True,
+            )
             return records
 
 
