@@ -388,29 +388,54 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
         )}
 
         {/* Executive Stats & Meeting Filter Bar */}
-        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-          {/* Summary Stats Badges */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div className="flex items-center space-x-2 text-xs font-bold text-slate-700">
-              <BarChart2 className="w-4 h-4 text-medpark-600" />
-              <span>Hospital Meeting Repository</span>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
+          {/* Summary KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Total Meetings */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center space-x-3.5">
+              <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-700 flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Repository Sessions</p>
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-xl font-black text-slate-900">{totalCount}</span>
+                  <span className="text-[11px] text-slate-500 font-medium">meetings logged</span>
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center space-x-3 text-xs">
-              <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full font-bold border border-slate-200">
-                Total: {totalCount}
-              </span>
-              <span className="px-3 py-1 bg-amber-50 text-amber-800 rounded-full font-bold border border-amber-200">
-                Pending Review: {pendingCount}
-              </span>
-              <span className="px-3 py-1 bg-emerald-50 text-emerald-800 rounded-full font-bold border border-emerald-200">
-                Delivered: {deliveredCount}
-              </span>
+            {/* Pending Clinical Review */}
+            <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200/80 flex items-center space-x-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Pending Clinical Gate</p>
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-xl font-black text-amber-900">{pendingCount}</span>
+                  <span className="text-[11px] text-amber-700 font-medium">awaiting sign-off</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Delivered Dispatches */}
+            <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200/80 flex items-center space-x-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Delivered Minutes</p>
+                <div className="flex items-baseline space-x-2">
+                  <span className="text-xl font-black text-emerald-900">{deliveredCount}</span>
+                  <span className="text-[11px] text-emerald-700 font-medium">dispatched via SMTP</span>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* Meeting Switcher & Filter Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
             {/* Search Input */}
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -418,19 +443,19 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
                 type="text"
                 value={meetingSearchQuery}
                 onChange={(e) => setMeetingSearchQuery(e.target.value)}
-                placeholder="Search meeting titles..."
-                className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                placeholder="Search meeting titles, types, or topics..."
+                className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20 transition-colors"
               />
             </div>
 
             {/* Workflow & Status Dropdowns */}
             <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
+              <div className="flex items-center space-x-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 text-xs">
                 <Filter className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
                 <select
                   value={workflowModeFilter}
                   onChange={(e) => setWorkflowModeFilter(e.target.value)}
-                  className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+                  className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                 >
                   <option value="all">All Modes</option>
                   <option value="supervised">Supervised</option>
@@ -438,11 +463,11 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
                 </select>
               </div>
 
-              <div className="flex items-center space-x-1 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
+              <div className="flex items-center space-x-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 text-xs">
                 <select
                   value={reviewStatusFilter}
                   onChange={(e) => setReviewStatusFilter(e.target.value)}
-                  className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+                  className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                 >
                   <option value="all">All Statuses</option>
                   <option value="pending_review">Pending Review</option>
@@ -453,21 +478,30 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
             </div>
           </div>
 
-          {/* Horizontal Meeting List Buttons */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 pt-1">
+          {/* Horizontal Meeting List Chips */}
+          <div className="flex items-center space-x-2 overflow-x-auto pb-1.5 pt-1">
             {filteredMeetings.map((m) => (
               <button
                 key={m.id}
                 onClick={() => handleSelectMeeting(m.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border flex items-center space-x-2 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border flex items-center space-x-2 shadow-2xs ${
                   selectedMeetingId === m.id
-                    ? 'bg-medpark-500 text-white border-medpark-600 shadow-xs'
-                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                    ? 'bg-medpark-500 text-white border-medpark-600 shadow-sm ring-2 ring-medpark-500/20'
+                    : 'bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 border-slate-200'
                 }`}
               >
                 <span>{m.title}</span>
+                <span
+                  className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                    selectedMeetingId === m.id
+                      ? 'bg-medpark-700 text-blue-100'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {m.meeting_type}
+                </span>
                 {m.review_status === 'delivered' && (
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${selectedMeetingId === m.id ? 'text-white' : 'text-emerald-600'}`} />
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${selectedMeetingId === m.id ? 'text-emerald-300' : 'text-emerald-600'}`} />
                 )}
               </button>
             ))}
