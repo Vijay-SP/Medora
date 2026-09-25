@@ -15,6 +15,6 @@ if str(backend_dir) not in sys.path:
 if __name__ == "__main__":
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", 8000))
-    reload = os.environ.get("RELOAD", "false").lower() in ("true", "1")
+    reload = os.environ.get("RELOAD", "true").lower() in ("true", "1")
     
-    uvicorn.run("app.main:app", host=host, port=port, reload=reload)
+    uvicorn.run("app.main:app", host=host, port=port, reload=reload, reload_dirs=[str(backend_dir / "app")])
