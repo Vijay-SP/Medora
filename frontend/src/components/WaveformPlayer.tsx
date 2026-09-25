@@ -1,170 +1,334 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
-import { Play, Pause, Volume2, RotateCcw, FastForward } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  RotateCcw,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  SlidersHorizontal,
+} from 'lucide-react';
 
 export interface WaveformPlayerRef {
   seekToSeconds: (seconds: number) => void;
   playRange: (startSec: number, endSec: number) => void;
+  togglePlay: () => void;
+  getCurrentTime: () => number;
 }
 
 interface WaveformPlayerProps {
   audioUrl: string;
+  onTimeUpdate?: (currentTime: number) => void;
 }
 
-export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(({ audioUrl }, ref) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const wavesurfer = useRef<WaveSurfer | null>(null);
-  const stopAtRef = useRef<number | null>(null);
+export const WaveformPlayer = forwardRef<WaveformPlayerRef, WaveformPlayerProps>(
+  ({ audioUrl, onTimeUpdate }, ref) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const wavesurfer = useRef<WaveSurfer | null>(null);
+    const stopAtRef = useRef<number | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState(1.0);
-  const [isReady, setIsReady] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [playbackRate, setPlaybackRate] = useState(1.0);
+    const [volume, setVolume] = useState(1.0);
+    const [isMuted, setIsMuted] = useState(false);
+    const [prevVolume, setPrevVolume] = useState(1.0);
+    const [zoomLevel, setZoomLevel] = useState(0); // minPxPerSec zoom
+    const [isReady, setIsReady] = useState(false);
+    const [showAdvancedControls, setShowAdvancedControls] = useState(false);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
+    useEffect(() => {
+      if (!containerRef.current) return;
 
-    // Initialize WaveSurfer
-    const ws = WaveSurfer.create({
-      container: containerRef.current,
-      waveColor: '#93c5fd', // Light medical blue
-      progressColor: '#005596', // Medpark primary blue
-      cursorColor: '#ef4444', // Red cursor
-      cursorWidth: 2,
-      barWidth: 2,
-      barGap: 1,
-      barRadius: 2,
-      height: 64,
-      url: audioUrl,
-    });
+      setIsReady(false);
+      setCurrentTime(0);
+      setDuration(0);
 
-    ws.on('ready', () => {
-      setDuration(ws.getDuration());
-      setIsReady(true);
-    });
+      const ws = WaveSurfer.create({
+        container: containerRef.current,
+        waveColor: '#93c5fd', // Light medical blue
+        progressColor: '#005596', // Medpark primary blue
+        cursorColor: '#ef4444', // Red cursor
+        cursorWidth: 2,
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 2,
+        height: 64,
+        url: audioUrl,
+        minPxPerSec: 0,
+      });
 
-    ws.on('audioprocess', () => {
-      const cur = ws.getCurrentTime();
-      setCurrentTime(cur);
-      if (stopAtRef.current !== null && cur >= stopAtRef.current) {
-        ws.pause();
+      ws.on('ready', () => {
+        const d = ws.getDuration();
+        setDuration(d);
+        setIsReady(true);
+      });
+
+      ws.on('audioprocess', () => {
+        const cur = ws.getCurrentTime();
+        setCurrentTime(cur);
+        if (onTimeUpdate) onTimeUpdate(cur);
+
+        if (stopAtRef.current !== null && cur >= stopAtRef.current) {
+          ws.pause();
+          stopAtRef.current = null;
+        }
+      });
+
+      ws.on('seeking', () => {
+        const cur = ws.getCurrentTime();
+        setCurrentTime(cur);
+        if (onTimeUpdate) onTimeUpdate(cur);
+      });
+
+      ws.on('play', () => setIsPlaying(true));
+      ws.on('pause', () => setIsPlaying(false));
+      ws.on('finish', () => {
+        setIsPlaying(false);
         stopAtRef.current = null;
+      });
+
+      wavesurfer.current = ws;
+
+      return () => {
+        ws.destroy();
+      };
+    }, [audioUrl]);
+
+    useImperativeHandle(ref, () => ({
+      seekToSeconds: (seconds: number) => {
+        stopAtRef.current = null;
+        if (wavesurfer.current && duration > 0) {
+          const progress = Math.min(1.0, Math.max(0.0, seconds / duration));
+          wavesurfer.current.seekTo(progress);
+          wavesurfer.current.play();
+        }
+      },
+      playRange: (startSec: number, endSec: number) => {
+        if (wavesurfer.current && duration > 0) {
+          stopAtRef.current = endSec;
+          const progress = Math.min(1.0, Math.max(0.0, startSec / duration));
+          wavesurfer.current.seekTo(progress);
+          wavesurfer.current.play();
+        }
+      },
+      togglePlay: () => {
+        if (wavesurfer.current) {
+          wavesurfer.current.playPause();
+        }
+      },
+      getCurrentTime: () => {
+        return wavesurfer.current ? wavesurfer.current.getCurrentTime() : 0;
+      },
+    }));
+
+    const togglePlay = () => {
+      if (wavesurfer.current) {
+        wavesurfer.current.playPause();
       }
-    });
-
-    ws.on('seeking', () => {
-      setCurrentTime(ws.getCurrentTime());
-    });
-
-    ws.on('play', () => setIsPlaying(true));
-    ws.on('pause', () => setIsPlaying(false));
-    ws.on('finish', () => {
-      setIsPlaying(false);
-      stopAtRef.current = null;
-    });
-
-    wavesurfer.current = ws;
-
-    return () => {
-      ws.destroy();
     };
-  }, [audioUrl]);
 
-  useImperativeHandle(ref, () => ({
-    seekToSeconds: (seconds: number) => {
-      stopAtRef.current = null;
+    const handleSkip = (seconds: number) => {
       if (wavesurfer.current && duration > 0) {
-        const progress = Math.min(1.0, Math.max(0.0, seconds / duration));
+        const newTime = Math.min(duration, Math.max(0, currentTime + seconds));
+        const progress = newTime / duration;
         wavesurfer.current.seekTo(progress);
-        wavesurfer.current.play();
       }
-    },
-    playRange: (startSec: number, endSec: number) => {
-      if (wavesurfer.current && duration > 0) {
-        stopAtRef.current = endSec;
-        const progress = Math.min(1.0, Math.max(0.0, startSec / duration));
-        wavesurfer.current.seekTo(progress);
-        wavesurfer.current.play();
+    };
+
+    const handleRateChange = () => {
+      const rates = [0.75, 1.0, 1.25, 1.5, 2.0];
+      const nextIdx = (rates.indexOf(playbackRate) + 1) % rates.length;
+      const nextRate = rates[nextIdx];
+      setPlaybackRate(nextRate);
+      if (wavesurfer.current) {
+        wavesurfer.current.setPlaybackRate(nextRate);
       }
-    },
-  }));
+    };
 
-  const togglePlay = () => {
-    if (wavesurfer.current) {
-      wavesurfer.current.playPause();
-    }
-  };
+    const handleVolumeChange = (newVol: number) => {
+      setVolume(newVol);
+      if (newVol === 0) {
+        setIsMuted(true);
+      } else {
+        setIsMuted(false);
+      }
+      if (wavesurfer.current) {
+        wavesurfer.current.setVolume(newVol);
+      }
+    };
 
-  const handleRateChange = () => {
-    const rates = [1.0, 1.25, 1.5, 2.0];
-    const nextIdx = (rates.indexOf(playbackRate) + 1) % rates.length;
-    const nextRate = rates[nextIdx];
-    setPlaybackRate(nextRate);
-    if (wavesurfer.current) {
-      wavesurfer.current.setPlaybackRate(nextRate);
-    }
-  };
+    const toggleMute = () => {
+      if (isMuted) {
+        setIsMuted(false);
+        const restoreVol = prevVolume > 0 ? prevVolume : 1.0;
+        setVolume(restoreVol);
+        if (wavesurfer.current) wavesurfer.current.setVolume(restoreVol);
+      } else {
+        setPrevVolume(volume);
+        setIsMuted(true);
+        setVolume(0);
+        if (wavesurfer.current) wavesurfer.current.setVolume(0);
+      }
+    };
 
-  const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
+    const handleZoomChange = (newZoom: number) => {
+      setZoomLevel(newZoom);
+      if (wavesurfer.current) {
+        wavesurfer.current.zoom(newZoom);
+      }
+    };
 
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm space-y-3">
-      {/* Waveform Canvas */}
-      <div className="relative">
-        <div ref={containerRef} className="w-full rounded-lg overflow-hidden" />
-        {!isReady && (
-          <div className="absolute inset-0 bg-slate-50/80 flex items-center justify-center text-xs text-slate-500 font-medium">
-            Loading audio visualization...
+    const formatTime = (secs: number) => {
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+        {/* Waveform Canvas */}
+        <div className="relative bg-slate-50 rounded-xl p-2 border border-slate-100 overflow-hidden">
+          <div ref={containerRef} className="w-full rounded-lg overflow-x-auto" />
+          {!isReady && (
+            <div className="absolute inset-0 bg-slate-50/90 flex items-center justify-center text-xs text-slate-500 font-medium">
+              Loading audio waveform visualization...
+            </div>
+          )}
+        </div>
+
+        {/* Audio Controls Bar */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Main Transport Controls */}
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={togglePlay}
+              disabled={!isReady}
+              className="w-10 h-10 rounded-full bg-medpark-500 text-white flex items-center justify-center hover:bg-medpark-600 transition-all shadow-sm disabled:opacity-50"
+              title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            >
+              {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+            </button>
+
+            {/* Skip -5s */}
+            <button
+              onClick={() => handleSkip(-5)}
+              disabled={!isReady}
+              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              title="Skip backward 5 seconds"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            {/* Skip +5s */}
+            <button
+              onClick={() => handleSkip(5)}
+              disabled={!isReady}
+              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+              title="Skip forward 5 seconds"
+            >
+              <RotateCw className="w-4 h-4" />
+            </button>
+
+            {/* Time display */}
+            <div className="text-xs font-mono font-semibold text-slate-800 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200">
+              <span>{formatTime(currentTime)}</span>
+              <span className="text-slate-400 mx-1">/</span>
+              <span className="text-slate-500">{formatTime(duration)}</span>
+            </div>
+          </div>
+
+          {/* Secondary Controls: Speed, Volume, Zoom & Advanced */}
+          <div className="flex items-center space-x-2.5 overflow-x-auto pb-1 sm:pb-0">
+            {/* Speed Toggle */}
+            <button
+              onClick={handleRateChange}
+              className="px-2.5 py-1.5 text-xs font-bold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors"
+              title="Playback Speed"
+            >
+              {playbackRate}x
+            </button>
+
+            {/* Volume Control */}
+            <div className="flex items-center space-x-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+              <button
+                onClick={toggleMute}
+                className="text-slate-500 hover:text-slate-800"
+                title={isMuted ? 'Unmute' : 'Mute'}
+              >
+                {isMuted || volume === 0 ? (
+                  <VolumeX className="w-4 h-4 text-rose-500" />
+                ) : (
+                  <Volume2 className="w-4 h-4" />
+                )}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMuted ? 0 : volume}
+                onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                className="w-16 h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-medpark-500"
+                title="Volume slider"
+              />
+            </div>
+
+            {/* Advanced Toggle (Zoom controls) */}
+            <button
+              onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+              className={`p-1.5 rounded-lg border transition-colors ${
+                showAdvancedControls
+                  ? 'bg-medpark-50 border-medpark-300 text-medpark-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-800'
+              }`}
+              title="Waveform Zoom Controls"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Waveform Zoom Controls Drawer */}
+        {showAdvancedControls && (
+          <div className="flex items-center space-x-3 pt-2 border-t border-slate-100 text-xs text-slate-600 animate-in fade-in duration-150">
+            <span className="font-semibold flex items-center space-x-1">
+              <ZoomIn className="w-3.5 h-3.5 text-medpark-600" />
+              <span>Waveform Zoom:</span>
+            </span>
+            <button
+              onClick={() => handleZoomChange(Math.max(0, zoomLevel - 20))}
+              className="p-1 text-slate-500 hover:text-slate-800 bg-slate-100 rounded"
+              title="Zoom out waveform"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              step="10"
+              value={zoomLevel}
+              onChange={(e) => handleZoomChange(parseInt(e.target.value, 10))}
+              className="w-32 h-1 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-medpark-500"
+            />
+            <button
+              onClick={() => handleZoomChange(Math.min(200, zoomLevel + 20))}
+              className="p-1 text-slate-500 hover:text-slate-800 bg-slate-100 rounded"
+              title="Zoom in waveform"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+            <span className="text-[11px] font-mono text-slate-400">
+              {zoomLevel === 0 ? 'Fit to width' : `${zoomLevel}px/sec`}
+            </span>
           </div>
         )}
       </div>
-
-      {/* Audio Controls Bar */}
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={togglePlay}
-            disabled={!isReady}
-            className="w-10 h-10 rounded-full bg-medpark-500 text-white flex items-center justify-center hover:bg-medpark-600 transition-colors shadow-sm disabled:opacity-50"
-            title={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
-          </button>
-
-          <div className="text-sm font-mono font-medium text-slate-700">
-            <span>{formatTime(currentTime)}</span>
-            <span className="text-slate-400 mx-1">/</span>
-            <span className="text-slate-500">{formatTime(duration)}</span>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => {
-              if (wavesurfer.current) {
-                wavesurfer.current.seekTo(0);
-              }
-            }}
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-            title="Restart from beginning"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
-          <button
-            onClick={handleRateChange}
-            className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-md transition-colors"
-            title="Change playback speed"
-          >
-            {playbackRate}x
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-});
+    );
+  }
+);
