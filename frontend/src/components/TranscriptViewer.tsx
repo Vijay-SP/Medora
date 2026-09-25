@@ -12,6 +12,7 @@ import {
   Copy,
   Radio,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 
 interface TranscriptViewerProps {
@@ -53,8 +54,9 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   // Auto-scroll to active segment if enabled
   useEffect(() => {
     if (autoScroll && activeSegmentRef.current) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       activeSegmentRef.current.scrollIntoView({
-        behavior: 'smooth',
+        behavior: reduce ? 'auto' : 'smooth',
         block: 'nearest',
       });
     }
@@ -63,9 +65,16 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   // Keyboard shortcut '/' to focus search
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+      if (e.key !== '/') return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable) {
+        return;
+      }
+      // Never steal focus out of an open dialog onto a search box behind its overlay
+      if (document.querySelector('[role="dialog"]')) return;
+      if (searchInputRef.current?.offsetParent) {
         e.preventDefault();
-        searchInputRef.current?.focus();
+        searchInputRef.current.focus();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -156,7 +165,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
     const parts = text.split(new RegExp(`(${query.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')})`, 'gi'));
     return parts.map((part, i) =>
       part.toLowerCase() === query.toLowerCase() ? (
-        <mark key={i} className="bg-amber-200 text-amber-900 rounded-xs px-0.5 font-medium">
+        <mark key={i} className="bg-amber-200 text-amber-900 rounded-sm px-0.5 font-medium">
           {part}
         </mark>
       ) : (
@@ -166,7 +175,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden divide-y divide-slate-100">
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden divide-y divide-slate-100">
 
       {/* Header & Controls Bar */}
       <div className="p-4 bg-slate-50/80 space-y-3">
@@ -174,7 +183,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
           <div>
             <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2">
               <span>Synchronized Multilingual Transcript</span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-medpark-50 text-medpark-700 border border-medpark-200">
+              <span className="text-[10px] font-semibold tabular-nums px-2 py-0.5 rounded-full bg-medpark-50 text-medpark-700 border border-medpark-500/20">
                 {filteredSegments.length} of {segments.length} utterances
               </span>
             </h3>
@@ -187,14 +196,15 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
             {/* Auto-scroll toggle */}
             <button
               onClick={() => setAutoScroll(!autoScroll)}
-              className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+              aria-pressed={autoScroll}
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 ${
                 autoScroll
-                  ? 'bg-medpark-50 border-medpark-300 text-medpark-700'
+                  ? 'bg-medpark-50 border-medpark-500/30 text-medpark-700'
                   : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
               }`}
               title="Toggle auto-scrolling to active audio segment"
             >
-              <Radio className={`w-3.5 h-3.5 ${autoScroll ? 'text-medpark-600 animate-pulse' : 'text-slate-400'}`} />
+              <Radio className={`w-3.5 h-3.5 ${autoScroll ? 'text-medpark-600' : 'text-slate-400'}`} />
               <span>{autoScroll ? 'Auto-Sync On' : 'Auto-Sync Off'}</span>
             </button>
 
@@ -202,7 +212,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
             <button
               onClick={handleCopyTranscript}
               disabled={filteredSegments.length === 0}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-2xs disabled:opacity-50"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
               title="Copy visible transcript text to clipboard"
             >
               <Copy className="w-3.5 h-3.5 text-slate-500" />
@@ -222,12 +232,15 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search transcript text... (/)"
+              aria-label="Search transcript"
               className="w-full text-xs pl-9 pr-8 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
             />
             {searchQuery && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 text-xs"
+                aria-label="Clear transcript search"
+                title="Clear search"
+                className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700 text-xs rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -235,15 +248,21 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
           </div>
 
           {/* Language Filter Pills */}
-          <div className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 ml-1.5 mr-1">Lang:</span>
+          <div
+            role="group"
+            aria-label="Filter by language"
+            className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200"
+          >
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 ml-1.5 mr-1">Lang:</span>
             {['all', 'ro', 'ru', 'en'].map((lang) => (
               <button
                 key={lang}
                 onClick={() => setSelectedLanguage(lang)}
-                className={`flex-1 py-1 text-[11px] font-bold uppercase rounded transition-colors ${
+                aria-pressed={selectedLanguage === lang}
+                aria-label={lang === 'all' ? 'All languages' : lang.toUpperCase()}
+                className={`flex-1 py-1 text-[11px] font-bold uppercase rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 ${
                   selectedLanguage === lang
-                    ? 'bg-medpark-500 text-white shadow-2xs'
+                    ? 'bg-medpark-500 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
@@ -254,11 +273,12 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
           {/* Speaker Filter Dropdown */}
           <div className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200">
-            <Filter className="w-3.5 h-3.5 text-slate-400 ml-2" />
+            <Filter className="w-3.5 h-3.5 text-slate-400 ml-2" aria-hidden="true" />
             <select
               value={selectedSpeaker}
               onChange={(e) => setSelectedSpeaker(e.target.value)}
-              className="w-full text-xs bg-transparent border-none text-slate-700 font-medium focus:outline-none cursor-pointer"
+              aria-label="Filter by speaker"
+              className="w-full text-xs bg-transparent border-none text-slate-700 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 rounded cursor-pointer"
             >
               <option value="all">All Speakers ({speakers.length})</option>
               {speakers.map((s) => (
@@ -272,18 +292,28 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       </div>
 
       {/* Utterances List */}
-      <div className="max-h-[540px] overflow-y-auto divide-y divide-slate-100 p-2 space-y-1">
+      <p className="sr-only" role="status">
+        {filteredSegments.length} of {segments.length} utterances shown
+      </p>
+      <div
+        tabIndex={0}
+        role="log"
+        aria-label="Transcript utterances"
+        className="max-h-[540px] overflow-y-auto divide-y divide-slate-100 p-2 space-y-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-medpark-500/40"
+      >
         {filteredSegments.map((seg) => {
           const isActive = activeSegmentId === seg.id;
           const contentText = seg.display_text || seg.corrected_text || seg.raw_text;
+          const isLowConfidence = typeof seg.confidence === 'number' && seg.confidence < 0.8;
 
           return (
             <div
               key={seg.id}
               ref={isActive ? activeSegmentRef : null}
+              aria-current={isActive ? 'true' : undefined}
               className={`p-3 rounded-xl transition-all ${
                 isActive
-                  ? 'bg-medpark-50/80 border-2 border-medpark-500/80 shadow-xs'
+                  ? 'bg-medpark-50/80 border-2 border-medpark-500/80 shadow-sm'
                   : seg.is_flagged
                   ? 'bg-amber-50/40 border border-amber-200/60'
                   : 'hover:bg-slate-50/80 border border-transparent'
@@ -302,10 +332,11 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
                   <button
                     onClick={() => onSeek(seg.start)}
-                    className="inline-flex items-center space-x-1 text-xs font-mono text-medpark-700 hover:text-medpark-900 bg-medpark-50 hover:bg-medpark-100 px-2 py-0.5 rounded-md border border-medpark-200 transition-colors"
+                    className="inline-flex items-center space-x-1 text-xs font-mono tabular-nums text-medpark-700 hover:text-medpark-900 bg-medpark-50 hover:bg-medpark-100 px-2 py-0.5 rounded-md border border-medpark-500/20 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
                     title="Listen to utterance"
+                    aria-label={`Play utterance from ${formatTimestamp(seg.start)}`}
                   >
-                    <Play className="w-3 h-3 fill-medpark-600" />
+                    <Play className="w-3 h-3 fill-medpark-600" aria-hidden="true" />
                     <span>
                       {formatTimestamp(seg.start)} - {formatTimestamp(seg.end)}
                     </span>
@@ -318,6 +349,19 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                   >
                     {seg.language}
                   </span>
+
+                  {isLowConfidence && !seg.corrected_text && (
+                    <span
+                      className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded"
+                      title={`Recognition confidence ${Math.round(seg.confidence * 100)}% — verify this utterance against the audio`}
+                    >
+                      <AlertTriangle className="w-3 h-3 text-amber-600" aria-hidden="true" />
+                      <span className="font-mono tabular-nums normal-case">
+                        {Math.round(seg.confidence * 100)}%
+                      </span>
+                      <span className="sr-only">recognition confidence, verify against audio</span>
+                    </span>
+                  )}
                 </div>
 
                 {/* Review Flags & Edit Trigger */}
@@ -335,8 +379,9 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                   {editingId !== seg.id && (
                     <button
                       onClick={() => startEdit(seg)}
-                      className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+                      className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
                       title="Edit utterance text"
+                      aria-label={`Edit utterance at ${formatTimestamp(seg.start)}`}
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -346,9 +391,11 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
               {/* Text Body / Inline Editor */}
               {editingId === seg.id ? (
-                <div className="mt-2 space-y-2 bg-slate-50 p-2.5 rounded-lg border border-medpark-300">
+                <div className="mt-2 space-y-2 bg-slate-50 p-2.5 rounded-lg border border-medpark-500/30">
                   <textarea
                     value={editText}
+                    lang={seg.language}
+                    aria-label={`Corrected text for the utterance at ${formatTimestamp(seg.start)}`}
                     onChange={(e) => setEditText(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
@@ -368,27 +415,35 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                       <button
                         onClick={cancelEdit}
                         disabled={isSaving}
-                        className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded transition-colors"
+                        className="px-2.5 py-1 text-slate-600 hover:bg-slate-200 rounded transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={() => saveEdit(seg.id)}
-                        disabled={isSaving}
-                        className="inline-flex items-center space-x-1 px-3 py-1 bg-medpark-500 text-white font-semibold rounded hover:bg-medpark-600 shadow-2xs"
+                        disabled={isSaving || !editText.trim()}
+                        className="inline-flex items-center space-x-1 px-3 py-1 bg-medpark-500 text-white font-semibold rounded hover:bg-medpark-600 shadow-sm disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/50 focus-visible:ring-offset-1"
                       >
-                        <Check className="w-3 h-3" />
-                        <span>Save Correction</span>
+                        {isSaving ? (
+                          <Loader2 className="w-3 h-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                        ) : (
+                          <Check className="w-3 h-3" aria-hidden="true" />
+                        )}
+                        <span>{isSaving ? 'Saving...' : 'Save Correction'}</span>
                       </button>
                     </div>
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-slate-800 leading-relaxed pl-1 pt-0.5">
+                <p lang={seg.language} className="text-sm text-slate-800 leading-relaxed pl-1 pt-0.5">
                   {renderHighlightedText(contentText, searchQuery)}
                   {seg.corrected_text && (
-                    <span className="ml-2 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider">
-                      Edited
+                    <span
+                      lang="en"
+                      className="ml-2 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider whitespace-nowrap"
+                      title={`Human-corrected. Original recognition: ${seg.raw_text}`}
+                    >
+                      Corrected
                     </span>
                   )}
                 </p>

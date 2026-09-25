@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { DecisionItem } from '../types';
 import { useToast } from './Toast';
-import { CheckCircle2, Play, Search, Copy, Filter, Sparkles } from 'lucide-react';
+import { CheckCircle2, Play, Search, Copy, Filter, Sparkles, AlertTriangle, Circle } from 'lucide-react';
 
 interface DecisionsTableProps {
   decisions: DecisionItem[];
@@ -45,6 +45,20 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
     }
   };
 
+  // Same timecode notation as the transcript viewer so citations read identically everywhere
+  const formatTimestamp = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const reviewedCount = decisions.filter((d) => d.is_reviewed).length;
+
+  const clearFilters = () => {
+    setSelectedCategory('all');
+    setSearchQuery('');
+  };
+
   const handleCopyDecisions = () => {
     if (filteredDecisions.length === 0) return;
     const text = filteredDecisions
@@ -56,31 +70,42 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+    <section
+      aria-labelledby="decisions-heading"
+      className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+    >
       {/* Header Bar */}
       <div className="p-4 bg-slate-50/80 border-b border-slate-200 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
               <CheckCircle2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Adopted Clinical & Operational Decisions</h3>
+              <h3 id="decisions-heading" className="font-bold text-slate-900 text-sm">
+                Adopted Clinical &amp; Operational Decisions
+              </h3>
               <p className="text-xs text-slate-500">Verified clinical council consensus with audio timestamps</p>
+              <p className="text-[11px] font-medium text-slate-500 tabular-nums mt-0.5">
+                {reviewedCount} of {decisions.length} verified by a reviewer
+              </p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span
+              role="status"
+              className="text-xs font-semibold tabular-nums px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+            >
               {filteredDecisions.length} decisions
             </span>
             <button
               onClick={handleCopyDecisions}
               disabled={filteredDecisions.length === 0}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-2xs disabled:opacity-50"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
               title="Copy decisions list to clipboard"
             >
-              <Copy className="w-3.5 h-3.5 text-slate-500" />
+              <Copy className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
               <span>Copy</span>
             </button>
           </div>
@@ -95,18 +120,25 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter decisions by keyword..."
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+              aria-label="Search decisions"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/40 focus:border-medpark-500"
             />
           </div>
 
-          <div className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200 w-full sm:w-auto overflow-x-auto">
+          <div
+            role="group"
+            aria-label="Filter by category"
+            tabIndex={0}
+            className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200 w-full sm:w-auto overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
+          >
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded transition-colors whitespace-nowrap ${
+                aria-pressed={selectedCategory === cat}
+                className={`px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded transition-colors whitespace-nowrap focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 ${
                   selectedCategory === cat
-                    ? 'bg-medpark-500 text-white shadow-2xs'
+                    ? 'bg-medpark-500 text-white'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
@@ -118,57 +150,104 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
       </div>
 
       {/* Decisions List */}
-      <div className="divide-y divide-slate-100">
-        {filteredDecisions.map((d) => (
-          <div key={d.id} className="p-4 space-y-2 hover:bg-slate-50/60 transition-colors">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
-                    {d.topic}
-                  </span>
-                  <span
-                    className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${getCategoryBadge(
-                      d.category
-                    )}`}
-                  >
-                    {d.category}
+      <div role="list" className="divide-y divide-slate-100">
+        {filteredDecisions.map((d) => {
+          const isGrounded = Boolean(d.evidence && d.evidence.length > 0);
+
+          return (
+            <div
+              key={d.id}
+              role="listitem"
+              className={`p-4 space-y-2 hover:bg-slate-50/60 transition-colors border-l-4 ${
+                isGrounded ? 'border-transparent' : 'border-amber-300'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1.5 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
+                      {d.topic}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${getCategoryBadge(
+                        d.category
+                      )}`}
+                    >
+                      {d.category}
+                    </span>
+                    {/* Read-only record of the per-item human verification */}
+                    {d.is_reviewed ? (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+                        <span>Verified</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                        <Circle className="w-3 h-3" aria-hidden="true" />
+                        <span>Unverified</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm font-semibold text-slate-900 leading-snug break-words">{d.decision}</p>
+                </div>
+              </div>
+
+              {/* Clickable Audio Evidence Citations */}
+              {isGrounded ? (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {d.evidence.map((ev, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => onSeek(ev.start, ev.end)}
+                      aria-label={`Play audio evidence from ${Math.floor(ev.start)} to ${Math.floor(
+                        ev.end
+                      )} seconds: ${ev.quote}`}
+                      className="group inline-flex items-center space-x-2 max-w-full text-xs text-medpark-700 bg-medpark-50 hover:bg-medpark-100 border border-medpark-500/25 hover:border-medpark-500/50 px-2.5 py-1.5 rounded-lg transition-colors motion-reduce:transition-none text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
+                      title="Play this audio citation"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-medpark-500 text-white flex items-center justify-center flex-shrink-0">
+                        <Play className="w-2.5 h-2.5 fill-current" aria-hidden="true" />
+                      </span>
+                      <span className="font-mono font-bold text-[11px] tabular-nums flex-shrink-0">
+                        {formatTimestamp(ev.start)} – {formatTimestamp(ev.end)}
+                      </span>
+                      <span className="italic truncate max-w-md text-slate-600">
+                        "{ev.quote}"
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="pt-1">
+                  <span className="inline-flex items-center space-x-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                    <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                    <span>No audio evidence — verify manually</span>
                   </span>
                 </div>
-                <p className="text-sm font-semibold text-slate-900 leading-snug">{d.decision}</p>
-              </div>
+              )}
             </div>
-
-            {/* Clickable Audio Evidence Citations */}
-            {d.evidence && d.evidence.length > 0 && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {d.evidence.map((ev, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => onSeek(ev.start, ev.end)}
-                    className="inline-flex items-center space-x-1.5 text-xs text-medpark-800 bg-medpark-50 hover:bg-medpark-100 border border-medpark-200 px-2.5 py-1 rounded-lg transition-colors text-left group"
-                    title="Click to play exact audio citation"
-                  >
-                    <Play className="w-3 h-3 fill-medpark-600 text-medpark-600 flex-shrink-0 group-hover:scale-110 transition-transform" />
-                    <span className="font-mono font-bold text-[11px]">
-                      [{Math.floor(ev.start)}s - {Math.floor(ev.end)}s]
-                    </span>
-                    <span className="italic truncate max-w-md text-slate-600">
-                      "{ev.quote}"
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
 
         {filteredDecisions.length === 0 && (
-          <div className="p-8 text-center text-sm text-slate-400">
-            No decisions match your search filter.
+          <div className="p-8 text-center space-y-3">
+            <p className="text-sm text-slate-600">
+              {decisions.length === 0
+                ? 'No decisions were extracted from this recording.'
+                : 'No decisions match your search filter.'}
+            </p>
+            {decisions.length > 0 && (
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
+              >
+                <Filter className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+                <span>Clear filter</span>
+              </button>
+            )}
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };

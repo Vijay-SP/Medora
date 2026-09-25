@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { RiskOrQuestionItem } from '../types';
 import { useToast } from './Toast';
-import { AlertTriangle, HelpCircle, Play, ShieldAlert, Search, Copy } from 'lucide-react';
+import { AlertTriangle, HelpCircle, Play, ShieldAlert, Search, Copy, Filter, MicOff } from 'lucide-react';
 
 interface RisksQuestionsTableProps {
   items: RiskOrQuestionItem[];
@@ -15,6 +15,13 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
   const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'risk' | 'unresolved_question'>('all');
+
+  // Visible labels mapped to the backend vocabulary so the filter cannot drift from the enum
+  const typeFilters: { value: 'all' | 'risk' | 'unresolved_question'; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'risk', label: 'Risks' },
+    { value: 'unresolved_question', label: 'Questions' },
+  ];
 
   const filteredItems = items.filter((item) => {
     if (typeFilter !== 'all' && item.item_type !== typeFilter) return false;
@@ -36,6 +43,27 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
     }
   };
 
+  // Same timecode notation as the transcript viewer so citations read identically everywhere
+  const formatTimestamp = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // The backend writes two degraded-extraction markers in Romanian into this list.
+  // They must never read as ordinary rows, and the Romanian text must not be the only cue.
+  const isAuditNote = (description: string) => /^\s*NOT[ĂA]\s+AUDIT/i.test(description);
+  const isUngroundedClaim = (description: string) => description.includes('[NEVERIFICAT AUDIO]');
+
+  const degradedCount = items.filter(
+    (i) => isAuditNote(i.description) || isUngroundedClaim(i.description)
+  ).length;
+
+  const clearFilters = () => {
+    setTypeFilter('all');
+    setSearchQuery('');
+  };
+
   const handleCopyItems = () => {
     if (filteredItems.length === 0) return;
     const text = filteredItems
@@ -55,34 +83,50 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
   const questionsCount = items.filter((i) => i.item_type === 'unresolved_question').length;
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+    <section
+      aria-labelledby="risks-heading"
+      className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+    >
       {/* Header */}
       <div className="p-4 bg-slate-50/80 border-b border-slate-200 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center space-x-2">
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
               <ShieldAlert className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Clinical Risks & Open Questions</h3>
+              <h3 id="risks-heading" className="font-bold text-slate-900 text-sm">
+                Clinical Risks &amp; Open Questions
+              </h3>
               <p className="text-xs text-slate-500">Identified clinical safety risks and unresolved queries</p>
+              {degradedCount > 0 && (
+                <p className="text-[11px] font-bold text-rose-700 tabular-nums mt-0.5">
+                  {degradedCount} extraction {degradedCount === 1 ? 'warning' : 'warnings'} require manual review
+                </p>
+              )}
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold">
+            <span
+              role="status"
+              className="px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-semibold tabular-nums"
+            >
               {risksCount} risks
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold">
+            <span
+              role="status"
+              className="px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold tabular-nums"
+            >
               {questionsCount} questions
             </span>
             <button
               onClick={handleCopyItems}
               disabled={filteredItems.length === 0}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-2xs disabled:opacity-50"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
               title="Copy list to clipboard"
             >
-              <Copy className="w-3.5 h-3.5 text-slate-500" />
+              <Copy className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
               <span>Copy</span>
             </button>
           </div>
@@ -96,69 +140,83 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter risks & questions..."
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+              placeholder="Filter risks and questions..."
+              aria-label="Search risks and open questions"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/40 focus:border-medpark-500"
             />
           </div>
 
-          <div className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200 w-full sm:w-auto">
-            <button
-              onClick={() => setTypeFilter('all')}
-              className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded transition-colors ${
-                typeFilter === 'all'
-                  ? 'bg-medpark-500 text-white shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setTypeFilter('risk')}
-              className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded transition-colors ${
-                typeFilter === 'risk'
-                  ? 'bg-medpark-500 text-white shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Risks
-            </button>
-            <button
-              onClick={() => setTypeFilter('unresolved_question')}
-              className={`px-2.5 py-1 text-[11px] font-bold uppercase rounded transition-colors ${
-                typeFilter === 'unresolved_question'
-                  ? 'bg-medpark-500 text-white shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              Questions
-            </button>
+          <div
+            role="group"
+            aria-label="Filter by item type"
+            className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200 w-full sm:w-auto"
+          >
+            {typeFilters.map((f) => (
+              <button
+                key={f.value}
+                onClick={() => setTypeFilter(f.value)}
+                aria-pressed={typeFilter === f.value}
+                className={`px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 ${
+                  typeFilter === f.value
+                    ? 'bg-medpark-500 text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
 
       {/* Items list */}
-      <div className="divide-y divide-slate-100">
+      <div role="list" className="divide-y divide-slate-100">
         {filteredItems.map((item) => {
           const isRisk = item.item_type === 'risk';
+          const auditNote = isAuditNote(item.description);
+          const ungrounded = isUngroundedClaim(item.description);
+          const isDegraded = auditNote || ungrounded;
+          const isGrounded = Boolean(item.evidence && item.evidence.length > 0);
+
           return (
-            <div key={item.id} className="p-4 space-y-2 hover:bg-slate-50/60 transition-colors">
+            <div
+              key={item.id}
+              role="listitem"
+              className={`p-4 space-y-2 transition-colors border-l-4 ${
+                isDegraded
+                  ? 'bg-rose-50/50 border-rose-500 hover:bg-rose-50'
+                  : `hover:bg-slate-50/60 ${isGrounded ? 'border-transparent' : 'border-amber-300'}`
+              }`}
+            >
               <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex items-center space-x-2">
-                    {isRisk ? (
-                      <span className="inline-flex items-center space-x-1 text-xs font-bold px-2.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
-                        <AlertTriangle className="w-3 h-3" />
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {auditNote ? (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-600 text-white border border-rose-600">
+                        <ShieldAlert className="w-3 h-3" aria-hidden="true" />
+                        <span>Audit notice</span>
+                      </span>
+                    ) : isRisk ? (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
+                        <AlertTriangle className="w-3 h-3" aria-hidden="true" />
                         <span>Identified Risk</span>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center space-x-1 text-xs font-bold px-2.5 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
-                        <HelpCircle className="w-3 h-3" />
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                        <HelpCircle className="w-3 h-3" aria-hidden="true" />
                         <span>Unresolved Question</span>
                       </span>
                     )}
 
+                    {ungrounded && (
+                      <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-600 text-white border border-rose-600">
+                        <MicOff className="w-3 h-3" aria-hidden="true" />
+                        <span>Not verified against audio</span>
+                      </span>
+                    )}
+
                     <span
-                      className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${getSeverityBadge(
+                      className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${getSeverityBadge(
                         item.severity
                       )}`}
                     >
@@ -166,25 +224,48 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                     </span>
                   </div>
 
-                  <p className="text-sm font-semibold text-slate-900 leading-snug">
+                  {/* English lead so the Romanian marker is never the only cue */}
+                  {auditNote && (
+                    <p className="text-sm font-bold text-rose-800 leading-snug">
+                      Degraded extraction: the neural model did not run. Review every item in these minutes before
+                      approval.
+                    </p>
+                  )}
+                  {ungrounded && (
+                    <p className="text-sm font-bold text-rose-800 leading-snug">
+                      Claim demoted: no synchronised audio evidence was found for this statement.
+                    </p>
+                  )}
+
+                  <p
+                    className={`text-sm leading-snug break-words ${
+                      isDegraded ? 'text-slate-700' : 'font-semibold text-slate-900'
+                    }`}
+                    lang={isDegraded ? 'ro' : undefined}
+                  >
                     {item.description}
                   </p>
                 </div>
               </div>
 
               {/* Clickable Audio Evidence */}
-              {item.evidence && item.evidence.length > 0 && (
+              {isGrounded ? (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {item.evidence.map((ev, idx) => (
                     <button
                       key={idx}
                       onClick={() => onSeek(ev.start, ev.end)}
-                      className="inline-flex items-center space-x-1.5 text-xs text-medpark-800 bg-medpark-50 hover:bg-medpark-100 border border-medpark-200 px-2.5 py-1 rounded-lg transition-colors text-left group"
-                      title="Click to play exact audio citation"
+                      aria-label={`Play audio evidence from ${Math.floor(ev.start)} to ${Math.floor(
+                        ev.end
+                      )} seconds: ${ev.quote}`}
+                      className="group inline-flex items-center space-x-2 max-w-full text-xs text-medpark-700 bg-medpark-50 hover:bg-medpark-100 border border-medpark-500/25 hover:border-medpark-500/50 px-2.5 py-1.5 rounded-lg transition-colors motion-reduce:transition-none text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
+                      title="Play this audio citation"
                     >
-                      <Play className="w-3 h-3 fill-medpark-600 text-medpark-600 flex-shrink-0 group-hover:scale-110 transition-transform" />
-                      <span className="font-mono font-bold text-[11px]">
-                        [{Math.floor(ev.start)}s - {Math.floor(ev.end)}s]
+                      <span className="w-4 h-4 rounded-full bg-medpark-500 text-white flex items-center justify-center flex-shrink-0">
+                        <Play className="w-2.5 h-2.5 fill-current" aria-hidden="true" />
+                      </span>
+                      <span className="font-mono font-bold text-[11px] tabular-nums flex-shrink-0">
+                        {formatTimestamp(ev.start)} – {formatTimestamp(ev.end)}
                       </span>
                       <span className="italic truncate max-w-md text-slate-600">
                         "{ev.quote}"
@@ -192,17 +273,40 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                     </button>
                   ))}
                 </div>
+              ) : (
+                // The degraded rows already carry a stronger, explicit warning above
+                !isDegraded && (
+                  <div className="pt-1">
+                    <span className="inline-flex items-center space-x-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
+                      <AlertTriangle className="w-3 h-3" aria-hidden="true" />
+                      <span>No audio evidence — verify manually</span>
+                    </span>
+                  </div>
+                )
               )}
             </div>
           );
         })}
 
         {filteredItems.length === 0 && (
-          <div className="p-8 text-center text-sm text-slate-400">
-            No risks or unresolved questions match your filter.
+          <div className="p-8 text-center space-y-3">
+            <p className="text-sm text-slate-600">
+              {items.length === 0
+                ? 'No clinical risks or unresolved questions were raised in this meeting.'
+                : 'No risks or unresolved questions match your filter.'}
+            </p>
+            {items.length > 0 && (
+              <button
+                onClick={clearFilters}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
+              >
+                <Filter className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
+                <span>Clear filter</span>
+              </button>
+            )}
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 };

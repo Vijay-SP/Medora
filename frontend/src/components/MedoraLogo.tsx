@@ -27,17 +27,20 @@ export const MedoraLogo: React.FC<MedoraLogoProps> = ({
       <div className="relative flex-shrink-0 flex items-center justify-center">
         {/* Ambient Aurora Glow Backdrop */}
         <div
-          className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-cyan-500/25 via-teal-400/20 to-emerald-400/25 blur-xs"
+          className="absolute -inset-1 rounded-2xl bg-gradient-to-tr from-cyan-500/25 via-teal-400/20 to-emerald-400/25 blur-sm"
           aria-hidden="true"
         />
 
+        {/* Decorative only: the MEDORA wordmark beside it carries the accessible name. */}
         <svg
           width={dimensions.icon}
           height={dimensions.icon}
           viewBox="0 0 100 100"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          className="relative drop-shadow-sm transition-transform duration-300 hover:scale-105"
+          aria-hidden="true"
+          focusable="false"
+          className="relative drop-shadow-sm motion-safe:transition-transform motion-safe:duration-300 motion-safe:hover:scale-105"
         >
           <defs>
             {/* Medora Aurora Waves Gradient */}
@@ -90,11 +93,11 @@ export const MedoraLogo: React.FC<MedoraLogoProps> = ({
           {/* Inner Aurora Core Glow */}
           <circle cx="50" cy="50" r="14" fill="url(#medoraAuroraWave)" opacity="0.9" />
 
-          {/* Center Star of Clarity */}
+          {/* Center Star of Clarity - static: the glow gradient already supplies the highlight,
+              and a permanently pulsing brand mark is persistent motion on every screen. */}
           <path
             d="M 50 38 Q 50 50 62 50 Q 50 50 50 62 Q 50 50 38 50 Q 50 50 50 38 Z"
             fill="#FFFFFF"
-            className="animate-pulse"
           />
           <circle cx="50" cy="50" r="3.5" fill="#FFFFFF" />
         </svg>
@@ -120,7 +123,7 @@ export const MedoraLogo: React.FC<MedoraLogoProps> = ({
               Bringing clarity to every medical decision
             </p>
           ) : (
-            <p className="text-[10px] text-slate-400 font-medium leading-tight">
+            <p className="text-[10px] text-slate-500 font-medium leading-tight">
               Medical + Aurora • Offline Clinical AI
             </p>
           )}

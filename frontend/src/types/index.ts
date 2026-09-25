@@ -146,4 +146,15 @@ export interface DeliveryRecord {
   docx_attachment_path?: string;
   sent_at?: string;
   error_message?: string;
+  smtp_response_code?: number;
+  idempotency_key?: string;
+}
+
+export interface ApprovalResponse {
+  meeting_id: string;
+  status: ReviewStatus;
+  approved_by: string;
+  approved_at: string;
+  revision: number;
+  delivery_record?: DeliveryRecord | null;
 }

@@ -3,42 +3,63 @@ import { Meeting, Transcript, MinutesOfMeeting, MeetingCreate } from './types';
 import { apiClient } from './api/client';
 import { useToast } from './components/Toast';
 import { Navbar } from './components/Navbar';
-import { WaveformPlayer, WaveformPlayerRef } from './components/WaveformPlayer';
-import { TranscriptViewer } from './components/TranscriptViewer';
-import { DecisionsTable } from './components/DecisionsTable';
-import { ActionItemsTable } from './components/ActionItemsTable';
-import { RisksQuestionsTable } from './components/RisksQuestionsTable';
+import { Sidebar, AppPage } from './components/Sidebar';
+import { DashboardView } from './components/DashboardView';
+import { SessionWorkspaceView } from './components/SessionWorkspaceView';
+import { LiveMeetingStudio } from './components/LiveMeetingStudio';
+import { DeliveriesView } from './components/DeliveriesView';
+import { SettingsView } from './components/SettingsView';
 import { ReviewApprovalModal } from './components/ReviewApprovalModal';
 import { MeetingIntakeModal } from './components/MeetingIntakeModal';
 import { DeliveryOutboxDrawer } from './components/DeliveryOutboxDrawer';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import {
-  FileText,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  FileDown,
-  Rocket,
-  Shield,
-  Layers,
-  Sparkles,
-  Loader2,
-  Calendar,
-  Users,
-  Edit3,
-  Save,
-  XCircle,
-  BookmarkCheck,
-  Search,
-  Trash2,
-  Copy,
-  BarChart2,
-  Filter,
-} from 'lucide-react';
+import { WaveformPlayerRef } from './components/WaveformPlayer';
+import { Trash2, AlertCircle } from 'lucide-react';
+
+const copyTextToClipboard = async (text: string): Promise<boolean> => {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Clipboard API write failed, trying fallback:', err);
+    }
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.top = '-1000px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch (err) {
+    console.error('Legacy fallback failed:', err);
+    return false;
+  }
+};
+
+const PIPELINE_STAGES: { key: string; label: string }[] = [
+  { key: 'preprocessing', label: 'Audio preprocessing' },
+  { key: 'transcribing', label: 'Transcription' },
+  { key: 'diarizing', label: 'Speaker diarization' },
+  { key: 'extracting', label: 'Minutes extraction' },
+  { key: 'generating_docs', label: 'Document generation' },
+];
 
 export const App: React.FC = () => {
   const { showToast } = useToast();
 
+  // Navigation State
+  const [currentPage, setCurrentPage] = useState<AppPage>('dashboard');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Meetings and active session state
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -49,85 +70,119 @@ export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'minutes' | 'transcript'>('minutes');
   const [playbackTime, setPlaybackTime] = useState<number>(0);
 
-  // Meeting Search & Filter
+  // Search & Filter
   const [meetingSearchQuery, setMeetingSearchQuery] = useState('');
   const [workflowModeFilter, setWorkflowModeFilter] = useState<string>('all');
   const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
 
   // Modals & Drawers
   const [isIntakeOpen, setIsIntakeOpen] = useState(false);
+  const [intakeInitialMode, setIntakeInitialMode] = useState<'upload' | 'live'>('upload');
   const [isApprovalOpen, setIsApprovalOpen] = useState(false);
   const [isOutboxOpen, setIsOutboxOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [meetingToDelete, setMeetingToDelete] = useState<Meeting | null>(null);
 
-  // Minutes Editing State
+  // Minutes Editing
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [summaryRoEdit, setSummaryRoEdit] = useState('');
   const [summaryEnEdit, setSummaryEnEdit] = useState('');
   const [isSavingMinutes, setIsSavingMinutes] = useState(false);
 
-  // Loading & Processing state
+  // Pipeline Status & Progress
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState(0);
   const [stageDetail, setStageDetail] = useState<string>('');
+  const [pipelineStage, setPipelineStage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const waveformRef = useRef<WaveformPlayerRef>(null);
   const selectedMeetingIdRef = useRef<string | null>(selectedMeetingId);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
+  const pipelineStartedIdRef = useRef<string | null>(null);
+  const statusPollInFlightRef = useRef(false);
+  const playbackBucketRef = useRef<number>(-1);
 
   useEffect(() => {
     selectedMeetingIdRef.current = selectedMeetingId;
   }, [selectedMeetingId]);
 
-  // Initial load
   useEffect(() => {
     loadMeetings();
   }, []);
 
-  // Poll meeting detail when selected
   useEffect(() => {
     if (selectedMeetingId) {
       loadMeetingData(selectedMeetingId);
     }
   }, [selectedMeetingId]);
 
-  // Polling pipeline status if processing
+  // Polling pipeline status
   useEffect(() => {
     let interval: number | null = null;
     if (isProcessing && selectedMeetingId) {
       interval = window.setInterval(async () => {
+        if (statusPollInFlightRef.current) return;
+        statusPollInFlightRef.current = true;
         try {
           const status = await apiClient.getPipelineStatus(selectedMeetingId);
           setPipelineProgress(status.progress);
           setStageDetail(status.current_stage || '');
+          if (PIPELINE_STAGES.some((s) => s.key === status.status)) {
+            setPipelineStage(status.status);
+          }
 
           if (status.status === 'completed' || status.status === 'failed') {
+            pipelineStartedIdRef.current = null;
             setIsProcessing(false);
             if (interval) clearInterval(interval);
             loadMeetingData(selectedMeetingId);
             loadMeetings();
+          } else if (status.status !== 'idle') {
+            pipelineStartedIdRef.current = null;
           }
         } catch (err) {
           console.error('Error polling pipeline status:', err);
+        } finally {
+          statusPollInFlightRef.current = false;
         }
       }, 1500);
     }
     return () => {
       if (interval) clearInterval(interval);
+      statusPollInFlightRef.current = false;
     };
   }, [isProcessing, selectedMeetingId]);
 
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const activeTag = document.activeElement?.tagName;
-      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') {
+      if (isIntakeOpen || isApprovalOpen || isOutboxOpen || isShortcutsOpen || meetingToDelete) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          if (isShortcutsOpen) setIsShortcutsOpen(false);
+          else if (isOutboxOpen) setIsOutboxOpen(false);
+          else if (isApprovalOpen) setIsApprovalOpen(false);
+          else if (isIntakeOpen) setIsIntakeOpen(false);
+          else setMeetingToDelete(null);
+        }
+        return;
+      }
+
+      const activeElement = document.activeElement as HTMLElement | null;
+      const activeTag = activeElement?.tagName;
+      if (
+        activeTag === 'INPUT' ||
+        activeTag === 'TEXTAREA' ||
+        activeTag === 'SELECT' ||
+        activeElement?.isContentEditable
+      ) {
         return;
       }
 
       if (e.key === ' ' || e.code === 'Space') {
+        if (activeTag === 'BUTTON' || activeTag === 'A') return;
         e.preventDefault();
         waveformRef.current?.togglePlay();
       } else if (e.key === '?') {
@@ -135,26 +190,25 @@ export const App: React.FC = () => {
         setIsShortcutsOpen((prev) => !prev);
       } else if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();
+        setIntakeInitialMode('upload');
         setIsIntakeOpen(true);
       } else if (e.key === 'o' || e.key === 'O') {
         e.preventDefault();
-        setIsOutboxOpen(true);
+        setCurrentPage('deliveries');
       } else if (e.key === '1') {
         setActiveTab('minutes');
       } else if (e.key === '2') {
         setActiveTab('transcript');
-      } else if (e.key === 'Escape') {
-        setIsIntakeOpen(false);
-        setIsApprovalOpen(false);
-        setIsOutboxOpen(false);
-        setIsShortcutsOpen(false);
-        setMeetingToDelete(null);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isIntakeOpen, isApprovalOpen, isOutboxOpen, isShortcutsOpen, meetingToDelete]);
+
+  useEffect(() => {
+    if (meetingToDelete) deleteCancelRef.current?.focus();
+  }, [meetingToDelete]);
 
   const loadMeetings = async () => {
     try {
@@ -180,6 +234,8 @@ export const App: React.FC = () => {
       setIsProcessing(false);
       setIsEditingSummary(false);
       setPlaybackTime(0);
+      setPipelineStage('');
+      playbackBucketRef.current = -1;
     }
   };
 
@@ -194,24 +250,27 @@ export const App: React.FC = () => {
           m.processing_status
         )
       ) {
+        pipelineStartedIdRef.current = null;
         setIsProcessing(true);
         setPipelineProgress(m.processing_progress);
         setStageDetail(m.current_stage_detail || '');
+        setPipelineStage(m.processing_status);
       } else {
+        if (pipelineStartedIdRef.current === id) {
+          pipelineStartedIdRef.current = null;
+        }
         setIsProcessing(false);
       }
 
-      // Load transcript
+      // Transcript
       try {
         const t = await apiClient.getTranscript(id);
-        if (selectedMeetingIdRef.current === id) {
-          setTranscript(t);
-        }
+        if (selectedMeetingIdRef.current === id) setTranscript(t);
       } catch {
         if (selectedMeetingIdRef.current === id) setTranscript(null);
       }
 
-      // Load minutes
+      // Minutes
       try {
         const min = await apiClient.getMinutes(id);
         if (selectedMeetingIdRef.current === id) {
@@ -229,35 +288,69 @@ export const App: React.FC = () => {
 
   const handleCreateMeeting = async (payload: MeetingCreate, file?: File) => {
     setErrorMessage(null);
+    let created: Meeting;
     try {
-      const created = await apiClient.createMeeting(payload);
-      if (file) {
-        await apiClient.uploadAudio(created.id, file);
-        await apiClient.startPipeline(created.id);
-        setIsProcessing(true);
-        setPipelineProgress(5);
-        setStageDetail('Initializing pipeline...');
-      }
-      showToast('Meeting created', `Meeting "${created.title}" successfully recorded and pipeline started.`);
-      await loadMeetings();
-      setSelectedMeetingId(created.id);
+      created = await apiClient.createMeeting(payload);
     } catch (err: any) {
       console.error('Error creating meeting:', err);
       setErrorMessage(`Failed to create meeting: ${err?.message || 'Server error'}`);
       showToast('Creation failed', err?.message || 'Server error', 'error');
+      throw err;
     }
+
+    let pipelineError: any = null;
+    if (file) {
+      try {
+        await apiClient.uploadAudio(created.id, file);
+        await apiClient.startPipeline(created.id);
+        pipelineStartedIdRef.current = created.id;
+        setIsProcessing(true);
+        setPipelineProgress(5);
+        setPipelineStage('preprocessing');
+        setStageDetail('Initializing audio pipeline...');
+      } catch (err: any) {
+        console.error('Error starting pipeline:', err);
+        pipelineError = err;
+      }
+    }
+
+    await loadMeetings();
+    setSelectedMeetingId(created.id);
+    setCurrentPage('workspace');
+
+    if (pipelineError) {
+      setErrorMessage(
+        `Meeting "${created.title}" was created, but the pipeline could not start: ${pipelineError?.message || 'Server error'}`
+      );
+      showToast('Pipeline not started', pipelineError?.message || 'Server error', 'error');
+      return;
+    }
+
+    showToast(
+      'Session Created',
+      file
+        ? `Meeting "${created.title}" started processing with Medora AI.`
+        : `Meeting "${created.title}" created. Audio can be added later.`
+    );
   };
 
   const handleDeleteMeeting = async (id: string) => {
     try {
       await apiClient.deleteMeeting(id);
-      showToast('Meeting deleted', 'Meeting record removed successfully.');
+      showToast('Meeting Deleted', 'Meeting record removed from repository.');
       setMeetingToDelete(null);
       const remaining = meetings.filter((m) => m.id !== id);
       setMeetings(remaining);
       if (selectedMeetingId === id) {
+        setSelectedMeeting(null);
+        setTranscript(null);
+        setMinutes(null);
+        setIsProcessing(false);
+        setIsEditingSummary(false);
+        setPlaybackTime(0);
+        setPipelineStage('');
+        playbackBucketRef.current = -1;
         setSelectedMeetingId(remaining.length > 0 ? remaining[0].id : null);
-        setSelectedMeeting(remaining.length > 0 ? remaining[0] : null);
       }
     } catch (err: any) {
       console.error('Failed to delete meeting:', err);
@@ -277,8 +370,9 @@ export const App: React.FC = () => {
       });
       setMinutes(updated);
       setIsEditingSummary(false);
-      showToast('Summary saved', `Updated executive summary saved for Revision ${updated.revision}.`);
+      showToast('Summary Saved', `Updated executive summary saved for Revision ${updated.revision}.`);
       await loadMeetingData(selectedMeetingId);
+      await loadMeetings();
     } catch (err: any) {
       console.error('Failed to update minutes:', err);
       setErrorMessage(`Failed to update summary: ${err?.message || 'Server error'}`);
@@ -291,608 +385,329 @@ export const App: React.FC = () => {
   const handleUpdateSegment = async (segmentId: string, correctedText: string) => {
     if (!selectedMeetingId) return;
     await apiClient.updateSegment(selectedMeetingId, segmentId, { corrected_text: correctedText });
-    const updated = await apiClient.getTranscript(selectedMeetingId);
-    setTranscript(updated);
+
+    try {
+      const updated = await apiClient.getTranscript(selectedMeetingId);
+      setTranscript(updated);
+    } catch (err) {
+      console.error('Failed to refresh transcript after correction:', err);
+      setTranscript((prev) =>
+        prev
+          ? {
+              ...prev,
+              segments: prev.segments.map((s) =>
+                s.id === segmentId
+                  ? { ...s, corrected_text: correctedText, display_text: correctedText }
+                  : s
+              ),
+            }
+          : prev
+      );
+    }
   };
 
   const handleApprove = async (reviewerName: string, reviewerRole: string, comments: string) => {
     if (!selectedMeetingId) return;
     setErrorMessage(null);
     try {
-      await apiClient.approveMeeting(selectedMeetingId, {
+      const result = await apiClient.approveMeeting(selectedMeetingId, {
         reviewer_name: reviewerName,
         reviewer_role: reviewerRole,
         comments,
+        expected_revision: minutes?.revision,
       });
-      showToast('Minutes Approved & Dispatched', 'Signed official minutes dispatched to hospital distribution list.');
+
       await loadMeetingData(selectedMeetingId);
       await loadMeetings();
-    } catch (err: any) {
-      setErrorMessage(`Failed to approve meeting: ${err?.message || 'Server error'}`);
-      showToast('Approval failed', err?.message || 'Server error', 'error');
-    }
-  };
 
-  const handleSeekAudio = (startSec: number, endSec?: number) => {
-    if (waveformRef.current) {
-      if (endSec !== undefined && endSec > startSec) {
-        waveformRef.current.playRange(startSec, endSec);
+      const delivery = result?.delivery_record || null;
+      if (delivery?.status === 'dispatched') {
+        showToast(
+          'Minutes Dispatched',
+          `Signed minutes emailed to ${delivery.recipients?.length || 0} recipient(s).`
+        );
+      } else if (delivery?.status === 'simulated') {
+        showToast(
+          'Minutes Signed (Simulated Outbox)',
+          `Delivery simulated to ${delivery.recipients?.length || 0} recipients.`
+        );
+      } else if (delivery?.status === 'failed') {
+        showToast('Signed, but Email Failed', delivery.error_message || 'SMTP failed', 'error');
       } else {
-        waveformRef.current.seekToSeconds(startSec);
+        showToast('Minutes Approved', 'Sign-off recorded successfully.');
       }
+    } catch (err: any) {
+      console.error('Approval failed:', err);
+      setErrorMessage(`Clinical sign-off failed: ${err?.message || 'Server error'}`);
+      showToast('Sign-off failed', err?.message || 'Server error', 'error');
+      throw err;
     }
   };
 
-  const handleCopyFullMoM = () => {
+  const handleSeekAudio = (time: number) => {
+    waveformRef.current?.seekToSeconds(time);
+  };
+
+  const handleCopyFullMoM = async () => {
     if (!minutes || !selectedMeeting) return;
-    const text = `# ${selectedMeeting.title}
-**Meeting Type:** ${selectedMeeting.meeting_type.toUpperCase()} | **Date:** ${new Date(selectedMeeting.scheduled_at).toLocaleString()}
-**Attendees:** ${selectedMeeting.attendees.map((a) => a.name).join(', ')}
+    const lines: string[] = [
+      `# ${selectedMeeting.title}`,
+      `**Data / Date:** ${new Date(selectedMeeting.scheduled_at).toLocaleString()}`,
+      `**Tip / Type:** ${selectedMeeting.meeting_type.toUpperCase()} | **Rev.** ${minutes.revision}`,
+      '',
+      '## Executive Summary (RO)',
+      minutes.summary_ro,
+    ];
 
-## Executive Summary
-${minutes.summary_ro}
-${minutes.summary_en ? `\n[English Summary]: ${minutes.summary_en}` : ''}
+    if (minutes.summary_en) {
+      lines.push('', '## Executive Summary (EN)', minutes.summary_en);
+    }
 
-## Decisions (${minutes.decisions.length})
-${minutes.decisions.map((d, i) => `${i + 1}. [${d.category.toUpperCase()}] ${d.topic}: ${d.decision}`).join('\n')}
+    if (minutes.decisions && minutes.decisions.length > 0) {
+      lines.push('', '## Decisions & Agreements');
+      minutes.decisions.forEach((d, idx) => {
+        lines.push(`${idx + 1}. **[${d.topic}]** ${d.decision}`);
+      });
+    }
 
-## Action Items (${minutes.action_items.length})
-${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Owner: ${a.owner} | Task: ${a.task} | Deadline: ${a.deadline_date || a.deadline_phrase || 'N/A'}`).join('\n')}
-`;
+    if (minutes.action_items && minutes.action_items.length > 0) {
+      lines.push('', '## Action Items');
+      minutes.action_items.forEach((a, idx) => {
+        const owner = a.owner || 'Unassigned';
+        const deadline = a.deadline_date || a.deadline_phrase || 'TBD';
+        lines.push(`${idx + 1}. **${a.task}** - *Responsible:* ${owner} | *Deadline:* ${deadline}`);
+      });
+    }
 
-    navigator.clipboard.writeText(text);
-    showToast('Copied Full Minutes', 'Executive summary, decisions, and action items copied as Markdown.');
+    const fullText = lines.join('\n');
+    const copied = await copyTextToClipboard(fullText);
+    if (copied) {
+      showToast('Copied MoM', 'Executive summary, decisions, and actions copied as Markdown.');
+    } else {
+      showToast('Copy failed', 'Clipboard access unavailable. Use PDF/DOCX download instead.', 'error');
+    }
   };
 
-  // Filter meetings list
-  const filteredMeetings = meetings.filter((m) => {
-    if (workflowModeFilter !== 'all' && m.workflow_mode !== workflowModeFilter) return false;
-    if (reviewStatusFilter !== 'all' && m.review_status !== reviewStatusFilter) return false;
-    if (meetingSearchQuery.trim()) {
-      const q = meetingSearchQuery.toLowerCase();
-      return m.title.toLowerCase().includes(q) || m.meeting_type.toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const clearMeetingFilters = () => {
+    setMeetingSearchQuery('');
+    setWorkflowModeFilter('all');
+    setReviewStatusFilter('all');
+  };
 
-  // Calculate meeting stats
-  const totalCount = meetings.length;
-  const pendingCount = meetings.filter((m) => m.review_status === 'pending_review' || m.review_status === 'draft').length;
-  const deliveredCount = meetings.filter((m) => m.review_status === 'delivered').length;
+  const pendingCount = meetings.filter(
+    (m) =>
+      m.review_status === 'pending_review' ||
+      m.review_status === 'draft' ||
+      m.review_status === 'approved'
+  ).length;
+
+  const getPageTitle = (page: AppPage): string => {
+    switch (page) {
+      case 'dashboard':
+        return 'Executive Dashboard';
+      case 'workspace':
+        return selectedMeeting ? `Workspace: ${selectedMeeting.title}` : 'Session Workspace';
+      case 'live':
+        return 'Live Meeting Room (Conference Mic)';
+      case 'deliveries':
+        return 'Email Governance & Deliveries';
+      case 'settings':
+        return 'System & Air-Gap Security';
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
-      <Navbar
-        onNewMeeting={() => setIsIntakeOpen(true)}
-        onOpenDeliveries={() => setIsOutboxOpen(true)}
-        onOpenShortcuts={() => setIsShortcutsOpen(true)}
-        meetingsCount={meetings.length}
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-800 antialiased">
+      {/* Accessible skip link */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:px-3 focus:py-2 focus:bg-white focus:text-medpark-700 focus:text-xs focus:font-bold focus:rounded-lg focus:border focus:border-medpark-500 shadow-md"
+      >
+        Skip to main content
+      </a>
+
+      {/* Persistent Left Sidebar */}
+      <Sidebar
+        currentPage={currentPage}
+        onNavigate={(page) => {
+          setCurrentPage(page);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        onStartLiveMeeting={() => {
+          setCurrentPage('live');
+        }}
+        onUploadRecording={() => {
+          setIntakeInitialMode('upload');
+          setIsIntakeOpen(true);
+        }}
+        selectedMeeting={selectedMeeting}
+        totalMeetingsCount={meetings.length}
+        pendingReviewsCount={pendingCount}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        
-        {/* Error Notification Banner */}
+      {/* Main Workspace Frame */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* Top Navbar */}
+        <Navbar
+          onNewMeeting={() => {
+            setIntakeInitialMode('upload');
+            setIsIntakeOpen(true);
+          }}
+          onOpenDeliveries={() => setCurrentPage('deliveries')}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+          currentPageTitle={getPageTitle(currentPage)}
+          meetingsCount={meetings.length}
+        />
+
+        {/* Action-required Error Banner */}
         {errorMessage && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-800 p-4 rounded-xl flex items-center justify-between shadow-xs">
-            <div className="flex items-center space-x-2">
+          <div
+            role="alert"
+            className="m-4 sm:m-6 lg:m-8 mb-0 p-4 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl flex items-center justify-between gap-3 shadow-xs"
+          >
+            <div className="flex items-center space-x-2.5 min-w-0">
               <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
-              <span className="text-xs font-semibold">{errorMessage}</span>
+              <p className="text-xs font-semibold leading-relaxed break-words">{errorMessage}</p>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-xs font-bold px-2.5 py-1 bg-white border border-rose-200 rounded-md text-rose-700 hover:bg-rose-100 transition-colors"
+              className="text-xs font-bold px-3 py-1 bg-white border border-rose-200 rounded-lg text-rose-700 hover:bg-rose-100 transition-colors flex-shrink-0"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Executive Stats & Meeting Filter Bar */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs space-y-4">
-          {/* Summary KPI Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* Total Meetings */}
-            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-blue-100/70 text-blue-700 flex items-center justify-center flex-shrink-0">
-                <FileText className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Repository Sessions</p>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-xl font-black text-slate-900">{totalCount}</span>
-                  <span className="text-[11px] text-slate-500 font-medium">meetings logged</span>
-                </div>
-              </div>
-            </div>
+        {/* Dynamic Page Views */}
+        <main id="main-content" className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {/* Page 1: Dashboard View */}
+          {currentPage === 'dashboard' && (
+            <DashboardView
+              meetings={meetings}
+              selectedMeetingId={selectedMeetingId}
+              onSelectMeeting={handleSelectMeeting}
+              onOpenWorkspace={(id) => {
+                handleSelectMeeting(id);
+                setCurrentPage('workspace');
+              }}
+              onStartLiveMeeting={() => setCurrentPage('live')}
+              onUploadRecording={() => {
+                setIntakeInitialMode('upload');
+                setIsIntakeOpen(true);
+              }}
+              onDeleteMeeting={(m) => setMeetingToDelete(m)}
+              searchQuery={meetingSearchQuery}
+              onSearchChange={setMeetingSearchQuery}
+              workflowFilter={workflowModeFilter}
+              onWorkflowFilterChange={setWorkflowModeFilter}
+              statusFilter={reviewStatusFilter}
+              onStatusFilterChange={setReviewStatusFilter}
+              onClearFilters={clearMeetingFilters}
+            />
+          )}
 
-            {/* Pending Clinical Review */}
-            <div className="p-3.5 bg-amber-50/60 rounded-xl border border-amber-200/80 flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
-                <Clock className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800">Pending Clinical Gate</p>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-xl font-black text-amber-900">{pendingCount}</span>
-                  <span className="text-[11px] text-amber-700 font-medium">awaiting sign-off</span>
-                </div>
-              </div>
-            </div>
+          {/* Page 2: Session Workspace View */}
+          {currentPage === 'workspace' && (
+            <SessionWorkspaceView
+              meetings={meetings}
+              selectedMeeting={selectedMeeting}
+              onSelectMeeting={handleSelectMeeting}
+              onBackToDashboard={() => setCurrentPage('dashboard')}
+              minutes={minutes}
+              transcript={transcript}
+              isProcessing={isProcessing}
+              pipelineProgress={pipelineProgress}
+              pipelineStage={pipelineStage}
+              stageDetail={stageDetail}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              playbackTime={playbackTime}
+              setPlaybackTime={setPlaybackTime}
+              playbackBucketRef={playbackBucketRef}
+              waveformRef={waveformRef}
+              onCopyFullMoM={handleCopyFullMoM}
+              onDeleteMeeting={(m) => setMeetingToDelete(m)}
+              onOpenApproval={() => setIsApprovalOpen(true)}
+              onOpenIntake={() => {
+                setIntakeInitialMode('upload');
+                setIsIntakeOpen(true);
+              }}
+              isEditingSummary={isEditingSummary}
+              setIsEditingSummary={setIsEditingSummary}
+              summaryRoEdit={summaryRoEdit}
+              setSummaryRoEdit={setSummaryRoEdit}
+              summaryEnEdit={summaryEnEdit}
+              setSummaryEnEdit={setSummaryEnEdit}
+              isSavingMinutes={isSavingMinutes}
+              onSaveSummary={handleSaveSummary}
+              onUpdateSegment={handleUpdateSegment}
+              onSeekAudio={handleSeekAudio}
+            />
+          )}
 
-            {/* Delivered Dispatches */}
-            <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200/80 flex items-center space-x-3.5">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center flex-shrink-0">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-800">Delivered Minutes</p>
-                <div className="flex items-baseline space-x-2">
-                  <span className="text-xl font-black text-emerald-900">{deliveredCount}</span>
-                  <span className="text-[11px] text-emerald-700 font-medium">dispatched via SMTP</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* Page 3: Live Meeting Studio */}
+          {currentPage === 'live' && (
+            <LiveMeetingStudio
+              onMeetingRecorded={async (payload, file) => {
+                await handleCreateMeeting(payload, file);
+                setCurrentPage('workspace');
+              }}
+              onCancel={() => setCurrentPage('dashboard')}
+            />
+          )}
 
-          {/* Meeting Switcher & Filter Controls */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={meetingSearchQuery}
-                onChange={(e) => setMeetingSearchQuery(e.target.value)}
-                placeholder="Search meeting titles, types, or topics..."
-                className="w-full text-xs pl-9 pr-3 py-2.5 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20 transition-colors"
-              />
-            </div>
+          {/* Page 4: Deliveries & Outbox */}
+          {currentPage === 'deliveries' && <DeliveriesView />}
 
-            {/* Workflow & Status Dropdowns */}
-            <div className="flex items-center space-x-2">
-              <div className="flex items-center space-x-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 text-xs">
-                <Filter className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
-                <select
-                  value={workflowModeFilter}
-                  onChange={(e) => setWorkflowModeFilter(e.target.value)}
-                  className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Modes</option>
-                  <option value="supervised">Supervised</option>
-                  <option value="auto_pilot">Auto-Pilot</option>
-                </select>
-              </div>
-
-              <div className="flex items-center space-x-1 bg-slate-50 p-1.5 rounded-xl border border-slate-200 text-xs">
-                <select
-                  value={reviewStatusFilter}
-                  onChange={(e) => setReviewStatusFilter(e.target.value)}
-                  className="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="pending_review">Pending Review</option>
-                  <option value="delivered">Delivered</option>
-                  <option value="draft">Draft</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Horizontal Meeting List Chips */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1.5 pt-1">
-            {filteredMeetings.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => handleSelectMeeting(m.id)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all border flex items-center space-x-2 shadow-2xs ${
-                  selectedMeetingId === m.id
-                    ? 'bg-medpark-500 text-white border-medpark-600 shadow-sm ring-2 ring-medpark-500/20'
-                    : 'bg-white text-slate-700 hover:bg-slate-50 hover:border-slate-300 border-slate-200'
-                }`}
-              >
-                <span>{m.title}</span>
-                <span
-                  className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                    selectedMeetingId === m.id
-                      ? 'bg-medpark-700 text-blue-100'
-                      : 'bg-slate-100 text-slate-500'
-                  }`}
-                >
-                  {m.meeting_type}
-                </span>
-                {m.review_status === 'delivered' && (
-                  <CheckCircle2 className={`w-3.5 h-3.5 ${selectedMeetingId === m.id ? 'text-emerald-300' : 'text-emerald-600'}`} />
-                )}
-              </button>
-            ))}
-
-            {filteredMeetings.length === 0 && !isLoading && (
-              <span className="text-xs text-slate-400 font-medium py-1">
-                No meetings match the search filter.
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Live Processing Banner */}
-        {isProcessing && (
-          <div className="bg-gradient-to-r from-blue-600 to-medpark-600 text-white p-5 rounded-2xl shadow-md space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <h4 className="font-bold text-sm tracking-wide">
-                  Intelligent Pipeline Processing (100% Air-Gapped)
-                </h4>
-              </div>
-              <span className="font-mono text-sm font-bold bg-white/20 px-2 py-0.5 rounded">
-                {pipelineProgress}%
-              </span>
-            </div>
-
-            <div className="w-full bg-black/20 rounded-full h-2 overflow-hidden">
-              <div
-                className="bg-white h-2 rounded-full transition-all duration-300"
-                style={{ width: `${pipelineProgress}%` }}
-              />
-            </div>
-
-            <p className="text-xs text-blue-100 flex items-center space-x-1.5 font-medium">
-              <span>{stageDetail || 'Processing audio normalization, VAD chunking, ASR, and extraction...'}</span>
-            </p>
-          </div>
-        )}
-
-        {/* Selected Meeting Workspace */}
-        {selectedMeeting && (
-          <div className="space-y-6">
-            
-            {/* Meeting Meta Header */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                    {selectedMeeting.title}
-                  </h2>
-                  <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-md bg-medpark-50 text-medpark-700 border border-medpark-200">
-                    {selectedMeeting.meeting_type}
-                  </span>
-
-                  <span
-                    className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold border ${
-                      selectedMeeting.workflow_mode === 'auto_pilot'
-                        ? 'bg-blue-50 text-blue-800 border-blue-200'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    }`}
-                  >
-                    {selectedMeeting.workflow_mode === 'auto_pilot' ? (
-                      <>
-                        <Rocket className="w-3.5 h-3.5" />
-                        <span>Auto-Pilot (Zero-Click)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Shield className="w-3.5 h-3.5" />
-                        <span>Supervised (Clinical Gate)</span>
-                      </>
-                    )}
-                  </span>
-
-                  {selectedMeeting.review_status === 'delivered' && (
-                    <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>Delivered via Email</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-medium pt-1">
-                  <span className="flex items-center space-x-1">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{new Date(selectedMeeting.scheduled_at).toLocaleString()}</span>
-                  </span>
-                  <span className="flex items-center space-x-1">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Audio: {selectedMeeting.audio_duration_seconds.toFixed(1)}s</span>
-                  </span>
-                  <span className="flex items-center space-x-1">
-                    <Users className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{selectedMeeting.attendees.length} participants</span>
-                  </span>
-                  {selectedMeeting.processing_time_seconds > 0 && (
-                    <span className="flex items-center space-x-1 font-mono text-emerald-600 font-bold">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Pipeline: {selectedMeeting.processing_time_seconds}s</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
-                {/* Copy Full MoM */}
-                {minutes && (
-                  <button
-                    onClick={handleCopyFullMoM}
-                    className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition-colors"
-                    title="Copy executive summary, decisions, and action items"
-                  >
-                    <Copy className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Copy Full MoM</span>
-                  </button>
-                )}
-
-                {/* Download PDF/DOCX */}
-                {minutes && (
-                  <>
-                    <a
-                      href={apiClient.getPdfDownloadUrl(selectedMeeting.id)}
-                      download
-                      className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold rounded-lg transition-colors"
-                      title="Download official PDF report"
-                    >
-                      <FileDown className="w-3.5 h-3.5 text-rose-600" />
-                      <span>PDF</span>
-                    </a>
-
-                    <a
-                      href={apiClient.getDocxDownloadUrl(selectedMeeting.id)}
-                      download
-                      className="inline-flex items-center space-x-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold rounded-lg transition-colors"
-                      title="Download official Word DOCX report"
-                    >
-                      <FileDown className="w-3.5 h-3.5 text-blue-600" />
-                      <span>DOCX</span>
-                    </a>
-                  </>
-                )}
-
-                {/* Approve Button in Supervised Mode */}
-                {selectedMeeting.workflow_mode === 'supervised' &&
-                  selectedMeeting.review_status !== 'delivered' && (
-                    <button
-                      onClick={() => setIsApprovalOpen(true)}
-                      className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all"
-                    >
-                      <Shield className="w-3.5 h-3.5" />
-                      <span>Sign & Dispatch</span>
-                    </button>
-                  )}
-
-                {/* Delete Meeting Button */}
-                <button
-                  onClick={() => setMeetingToDelete(selectedMeeting)}
-                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                  title="Delete meeting record"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* WaveSurfer Audio Player */}
-            {selectedMeeting.original_audio_path && (
-              <WaveformPlayer
-                ref={waveformRef}
-                audioUrl={apiClient.getAudioStreamUrl(selectedMeeting.id)}
-                onTimeUpdate={(t) => setPlaybackTime(t)}
-              />
-            )}
-
-            {/* Tabs Navigation */}
-            <div className="border-b border-slate-200 flex space-x-6">
-              <button
-                onClick={() => setActiveTab('minutes')}
-                className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all ${
-                  activeTab === 'minutes'
-                    ? 'border-medpark-500 text-medpark-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Official Minutes (MoM)</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('transcript')}
-                className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-all ${
-                  activeTab === 'transcript'
-                    ? 'border-medpark-500 text-medpark-600'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Layers className="w-4 h-4" />
-                <span>Multilingual Transcript & Speakers</span>
-                {transcript && (
-                  <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-bold">
-                    {transcript.segments.length}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Tab 1: Minutes Workspace */}
-            {activeTab === 'minutes' && (
-              <div className="space-y-6">
-                {minutes ? (
-                  <>
-                    {/* Executive Summary & Revision Meta */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-2">
-                          <Sparkles className="w-4 h-4 text-medpark-600" />
-                          <h3 className="font-bold text-sm text-slate-900">Medora Executive Summary</h3>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                            Revision {minutes.revision}
-                          </span>
-                          <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                            {minutes.model_version}
-                          </span>
-                        </div>
-
-                        {!isEditingSummary ? (
-                          <button
-                            onClick={() => {
-                              setSummaryRoEdit(minutes.summary_ro || '');
-                              setSummaryEnEdit(minutes.summary_en || '');
-                              setIsEditingSummary(true);
-                            }}
-                            className="inline-flex items-center space-x-1.5 text-xs text-slate-600 hover:text-medpark-600 hover:bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200 transition-colors font-semibold"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                            <span>Edit Summary</span>
-                          </button>
-                        ) : (
-                          <div className="flex items-center space-x-2">
-                            <button
-                              onClick={() => setIsEditingSummary(false)}
-                              disabled={isSavingMinutes}
-                              className="inline-flex items-center space-x-1 text-xs text-slate-500 hover:text-slate-800 px-2 py-1 rounded transition-colors"
-                            >
-                              <XCircle className="w-3.5 h-3.5" />
-                              <span>Cancel</span>
-                            </button>
-                            <button
-                              onClick={handleSaveSummary}
-                              disabled={isSavingMinutes}
-                              className="inline-flex items-center space-x-1 text-xs bg-medpark-500 hover:bg-medpark-600 text-white font-bold px-3 py-1 rounded-md shadow-2xs transition-colors disabled:opacity-50"
-                            >
-                              {isSavingMinutes ? (
-                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                              ) : (
-                                <Save className="w-3.5 h-3.5" />
-                              )}
-                              <span>Save</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {isEditingSummary ? (
-                        <div className="space-y-3 pt-2">
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              Romanian Summary
-                            </label>
-                            <textarea
-                              value={summaryRoEdit}
-                              onChange={(e) => setSummaryRoEdit(e.target.value)}
-                              rows={3}
-                              className="w-full text-sm text-slate-800 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-medpark-500 focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-slate-700 mb-1">
-                              English Summary
-                            </label>
-                            <textarea
-                              value={summaryEnEdit}
-                              onChange={(e) => setSummaryEnEdit(e.target.value)}
-                              rows={2}
-                              className="w-full text-sm text-slate-800 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-medpark-500 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <p className="text-sm text-slate-800 leading-relaxed font-medium">{minutes.summary_ro}</p>
-                          {minutes.summary_en && (
-                            <p className="text-xs text-slate-600 italic pt-2 border-t border-slate-100">
-                              <span className="font-bold text-slate-700 not-italic mr-1">[English Translation]</span>
-                              {minutes.summary_en}
-                            </p>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {/* Agenda Topics */}
-                    {minutes.agenda_topics && minutes.agenda_topics.length > 0 && (
-                      <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <BookmarkCheck className="w-4 h-4 text-medpark-600" />
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                            Agenda Topics
-                          </h4>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {minutes.agenda_topics.map((topic, idx) => (
-                            <span
-                              key={idx}
-                              className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200"
-                            >
-                              {topic}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Decisions Table */}
-                    <DecisionsTable
-                      decisions={minutes.decisions}
-                      onSeek={handleSeekAudio}
-                    />
-
-                    {/* Action Items Table */}
-                    <ActionItemsTable
-                      actionItems={minutes.action_items}
-                      onSeek={handleSeekAudio}
-                    />
-
-                    {/* Risks and Unresolved Questions Table */}
-                    <RisksQuestionsTable
-                      items={minutes.risks_and_questions || []}
-                      onSeek={handleSeekAudio}
-                    />
-                  </>
-                ) : (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-sm font-medium">
-                    {isProcessing
-                      ? 'Minutes of meeting are currently being extracted...'
-                      : 'No minutes generated yet. Upload an audio file to trigger the pipeline.'}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Tab 2: Multilingual Transcript */}
-            {activeTab === 'transcript' && (
-              <div>
-                {transcript ? (
-                  <TranscriptViewer
-                    segments={transcript.segments}
-                    onSeek={handleSeekAudio}
-                    onUpdateSegment={handleUpdateSegment}
-                    currentTime={playbackTime}
-                  />
-                ) : (
-                  <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400 text-sm font-medium">
-                    {isProcessing
-                      ? 'Generating multilingual transcript...'
-                      : 'Transcript is not yet available.'}
-                  </div>
-                )}
-              </div>
-            )}
-
-          </div>
-        )}
-
-      </main>
+          {/* Page 5: System & Settings */}
+          {currentPage === 'settings' && <SettingsView />}
+        </main>
+      </div>
 
       {/* Delete Confirmation Modal */}
       {meetingToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
+          onClick={() => setMeetingToDelete(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6 space-y-4"
+          >
             <div className="flex items-center space-x-3 text-rose-600">
               <Trash2 className="w-6 h-6" />
-              <h3 className="font-bold text-base text-slate-900">Delete Meeting Record?</h3>
+              <h3 id="delete-dialog-title" className="font-bold text-base text-slate-900">
+                Delete Meeting Record?
+              </h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Are you sure you want to permanently delete <strong>"{meetingToDelete.title}"</strong> and all associated transcript/document artifacts? This action cannot be undone.
-            </p>
+
+            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+              <p>
+                This permanently deletes <strong>"{meetingToDelete.title}"</strong> (
+                {new Date(meetingToDelete.scheduled_at).toLocaleDateString()}) from the local vault.
+              </p>
+
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700">
+                  Permanently Removed
+                </p>
+                <ul className="mt-1 space-y-1 text-xs text-rose-800 font-medium list-disc list-inside">
+                  <li>Original audio recording &amp; normalized WAV</li>
+                  <li>Full transcript and speaker corrections</li>
+                  <li>Official minutes &amp; generated PDF/DOCX revisions</li>
+                </ul>
+              </div>
+            </div>
+
             <div className="flex items-center justify-end space-x-3 pt-2">
               <button
+                ref={deleteCancelRef}
                 onClick={() => setMeetingToDelete(null)}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
               >
@@ -900,7 +715,7 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
               </button>
               <button
                 onClick={() => handleDeleteMeeting(meetingToDelete.id)}
-                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-2xs transition-all"
+                className="px-4 py-2 text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition-colors"
               >
                 Delete Permanently
               </button>
@@ -909,13 +724,15 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
         </div>
       )}
 
-      {/* Modals & Drawers */}
+      {/* Dual-Mode Meeting Intake Modal */}
       <MeetingIntakeModal
         isOpen={isIntakeOpen}
+        initialMode={intakeInitialMode}
         onClose={() => setIsIntakeOpen(false)}
         onSubmit={handleCreateMeeting}
       />
 
+      {/* Review Approval Modal */}
       {selectedMeeting && (
         <ReviewApprovalModal
           meeting={selectedMeeting}
@@ -925,12 +742,14 @@ ${minutes.action_items.map((a, i) => `${i + 1}. [${a.priority.toUpperCase()}] Ow
         />
       )}
 
+      {/* Delivery Outbox Drawer */}
       <DeliveryOutboxDrawer
         isOpen={isOutboxOpen}
         onClose={() => setIsOutboxOpen(false)}
         activeMeetingId={selectedMeetingId || undefined}
       />
 
+      {/* Keyboard Shortcuts Modal */}
       <KeyboardShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
