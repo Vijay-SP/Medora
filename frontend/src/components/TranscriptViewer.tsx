@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TranscriptSegment, LanguageSpan } from '../types';
 import { useToast } from './Toast';
 import {
@@ -86,14 +86,18 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   const activeSegmentRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Collect unique speakers
-  const speakers = Array.from(new Set(segments.map((s) => s.speaker)));
+  // Optimization: Memoize unique speakers list to avoid recreating set and array on every time update (60fps audio progress)
+  const speakers = useMemo(() => Array.from(new Set(segments.map((s) => s.speaker))), [segments]);
 
-  // Languages actually present in this transcript, in a stable display order (known codes first,
-  // then anything else an older record may carry). The filter only offers what exists.
-  const languagesPresent = Array.from(new Set(segments.map((s) => (s.language || 'und').toLowerCase()))).sort(
-    (a, b) => languageRank(a) - languageRank(b) || a.localeCompare(b)
+  // Optimization: Memoize languages list to prevent recalculating unique languages and sorting on every render
+  const languagesPresent = useMemo(
+    () =>
+      Array.from(new Set(segments.map((s) => (s.language || 'und').toLowerCase()))).sort(
+        (a, b) => languageRank(a) - languageRank(b) || a.localeCompare(b)
+      ),
+    [segments]
   );
+
   // A pill selected for a language that no longer exists (segments reloaded) must not blank the list.
   const effectiveLanguage = selectedLanguage !== 'all' && !languagesPresent.includes(selectedLanguage) ? 'all' : selectedLanguage;
 
@@ -132,25 +136,27 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Filter segments
-  const filteredSegments = segments.filter((seg) => {
-    // Language filter
-    if (effectiveLanguage !== 'all' && (seg.language || 'und').toLowerCase() !== effectiveLanguage) {
-      return false;
-    }
-    // Speaker filter
-    if (selectedSpeaker !== 'all' && seg.speaker !== selectedSpeaker) {
-      return false;
-    }
-    // Search query filter
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const text = (seg.display_text || seg.corrected_text || seg.raw_text).toLowerCase();
-      const speaker = seg.speaker.toLowerCase();
-      return text.includes(q) || speaker.includes(q);
-    }
-    return true;
-  });
+  // Optimization: Memoize filtered segments so playback time updates do not re-run filtering/string searches unnecessarily
+  const filteredSegments = useMemo(() => {
+    return segments.filter((seg) => {
+      // Language filter
+      if (effectiveLanguage !== 'all' && (seg.language || 'und').toLowerCase() !== effectiveLanguage) {
+        return false;
+      }
+      // Speaker filter
+      if (selectedSpeaker !== 'all' && seg.speaker !== selectedSpeaker) {
+        return false;
+      }
+      // Search query filter
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const text = (seg.display_text || seg.corrected_text || seg.raw_text).toLowerCase();
+        const speaker = seg.speaker.toLowerCase();
+        return text.includes(q) || speaker.includes(q);
+      }
+      return true;
+    });
+  }, [segments, effectiveLanguage, selectedSpeaker, searchQuery]);
 
   const startEdit = (seg: TranscriptSegment) => {
     setEditingId(seg.id);
