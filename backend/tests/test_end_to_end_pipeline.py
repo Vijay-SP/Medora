@@ -33,6 +33,7 @@ os.environ["LLM_API_BASE_URL"] = "http://127.0.0.1:9"
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+os.environ.setdefault("ASR_PROVIDER", "whisper_cpp" if Path("/opt/homebrew/bin/whisper-cli").exists() else "faster_whisper")
 
 import asyncio  # noqa: E402
 from contextlib import contextmanager  # noqa: E402
@@ -239,6 +240,16 @@ def _assert_documents_isolated(minutes: MinutesOfMeeting, test_dir: Path) -> Non
     assert Path(minutes.docx_path).is_relative_to(test_dir)
 
 
+class _MockEngine:
+    def __init__(self, segments):
+        self.segments = segments
+        self.device = "metal" if settings.ASR_PROVIDER == "whisper_cpp" else "cpu"
+    def transcribe(self, *args, **kwargs):
+        return self.segments
+    def release_model(self):
+        pass
+
+
 def test_end_to_end_speech_pipeline_degraded_draft_is_held():
     """
     Without a local LLM (policy allows the heuristic fallback) the pipeline completes with a DEGRADED
@@ -248,14 +259,15 @@ def test_end_to_end_speech_pipeline_degraded_draft_is_held():
     with isolated_storage("medpark_test_e2e_speech_") as test_dir:
         meeting, mock_segments = _prepare_speech_meeting()
 
-        with patch("app.services.asr.whisper_engine.whisper_engine.transcribe", return_value=mock_segments), \
+        with patch("app.services.pipeline_orchestrator.get_asr_engine", return_value=_MockEngine(mock_segments)), \
+             patch("app.services.asr.whisper_engine.whisper_engine.transcribe", return_value=mock_segments), \
              patch("aiosmtplib.send", new_callable=AsyncMock) as smtp_send:
             completed_meeting = asyncio.run(pipeline_orchestrator.run_pipeline(meeting.id))
 
         assert completed_meeting.processing_status == ProcessingStatus.COMPLETED
         assert completed_meeting.processing_progress == 100
         assert completed_meeting.audio_duration_seconds > 0.0
-        assert completed_meeting.asr_device_used in ("cuda", "cpu")
+        assert completed_meeting.asr_device_used in ("cuda", "cpu", "metal")
 
         # A degraded draft never leaves the building: held for review, dispatch guard message surfaced
         assert completed_meeting.review_status == ReviewStatus.PENDING_REVIEW
@@ -301,7 +313,8 @@ def test_end_to_end_speech_pipeline_llm_minutes_are_delivered():
                 extraction_stats={"engine": "ollama", "model": settings.LLM_MODEL_NAME, "chunks": 1, "calls": 2},
             )
 
-        with patch("app.services.asr.whisper_engine.whisper_engine.transcribe", return_value=mock_segments), \
+        with patch("app.services.pipeline_orchestrator.get_asr_engine", return_value=_MockEngine(mock_segments)), \
+             patch("app.services.asr.whisper_engine.whisper_engine.transcribe", return_value=mock_segments), \
              patch.object(extraction_engine, "preflight", new=AsyncMock(return_value=LLM_PROVENANCE)), \
              patch.object(extraction_engine, "extract_minutes", new=AsyncMock(side_effect=grounded_extract)), \
              patch("aiosmtplib.send", new_callable=AsyncMock) as smtp_send:

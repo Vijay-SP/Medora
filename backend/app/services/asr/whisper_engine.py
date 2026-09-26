@@ -7,8 +7,12 @@ from pathlib import Path
 import gc
 import re
 from typing import Optional
-import ctranslate2
-from faster_whisper import WhisperModel
+try:
+    import ctranslate2
+    from faster_whisper import WhisperModel
+except ImportError:
+    ctranslate2 = None
+    WhisperModel = None
 from app.core.config import settings
 from app.core.exceptions import ASREngineError
 from app.core.logging import logger
@@ -39,7 +43,7 @@ class FasterWhisperEngine(BaseASREngine):
 
     def _resolve_device(self) -> str:
         if settings.WHISPER_DEVICE == "auto":
-            has_cuda = ctranslate2.get_cuda_device_count() > 0
+            has_cuda = (ctranslate2 is not None) and (ctranslate2.get_cuda_device_count() > 0)
             dev = "cuda" if has_cuda else "cpu"
             logger.info(f"Auto-detected ASR compute device: {dev.upper()}")
             return dev
@@ -52,6 +56,9 @@ class FasterWhisperEngine(BaseASREngine):
 
     def load_model(self, force_cpu: bool = False) -> WhisperModel:
         """Loads model into memory if not already initialized."""
+        if WhisperModel is None:
+            raise ASREngineError("faster-whisper is not installed in this environment. Use whisper_cpp or remote ASR provider.")
+
         if force_cpu:
             self.device = "cpu"
             self.compute_type = "int8"

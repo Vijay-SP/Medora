@@ -37,8 +37,25 @@ class Settings(BaseSettings):
     # Hardware & Audio Processing (RTX 3050 4GB GPU / 32GB RAM profile)
     DEFAULT_SAMPLE_RATE: int = 16000  # 16kHz mono required for speech AI
     
-    # ASR Configuration (faster-whisper)
-    # Options: tiny, base, small, medium, large-v3-turbo, large-v3
+    # ASR Configuration
+    # Provider options: 'faster_whisper' (default for CUDA/CPU servers), 'whisper_cpp' (Mac Metal/CPU), 'remote' (LAN client)
+    ASR_PROVIDER: Literal["faster_whisper", "whisper_cpp", "remote"] = "faster_whisper"
+
+    # Remote ASR Configuration (for teammates connecting over LAN)
+    REMOTE_ASR_BASE_URL: str = "http://127.0.0.1:8001"
+    REMOTE_ASR_API_KEY: str = ""
+    REMOTE_ASR_TIMEOUT_S: float = 3600.0
+    REMOTE_ASR_POLL_INTERVAL_S: float = 2.0
+
+    # whisper.cpp ASR Configuration (local Metal on Apple Silicon / CPU)
+    WHISPER_CPP_BINARY: Path = Path("/opt/homebrew/bin/whisper-cli")
+    WHISPER_CPP_MODEL: Path = Path("data/models/whisper.cpp/ggml-large-v3-turbo.bin")
+    WHISPER_CPP_VAD_MODEL: Path = Path("data/models/whisper.cpp/ggml-silero-v6.2.0.bin")
+    WHISPER_CPP_THREADS: int = 4
+    WHISPER_CPP_USE_GPU: bool = True
+    WHISPER_CPP_TIMEOUT_S: int = 1800
+
+    # faster-whisper Configuration (Options: tiny, base, small, medium, large-v3-turbo, large-v3)
     WHISPER_MODEL_NAME: str = "turbo"
     WHISPER_DEVICE: Literal["cuda", "cpu", "auto"] = "auto"
     WHISPER_COMPUTE_TYPE: Literal["float16", "int8_float16", "int8"] = "int8_float16"

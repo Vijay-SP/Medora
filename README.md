@@ -4,6 +4,10 @@
 
 Developed for **Medpark International Hospital (Chișinău, Moldova)**.
 
+For a shared Mac-hosted processing host (Metal-accelerated Whisper ASR on port 8001 + Ollama LLM on port 11434) with teammates connecting over LAN, see:
+- [Teammate Connection Prompt (copy into coding agents)](docs/TEAMMATE_CONNECTION_PROMPT.md)
+- [LAN LLM Setup](docs/LAN_LLM_SETUP.md)
+
 ---
 
 ## 1. System Architecture & Workflow
