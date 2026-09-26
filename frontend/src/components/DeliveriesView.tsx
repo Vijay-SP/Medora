@@ -123,23 +123,26 @@ export const DeliveriesView: React.FC<{ onDeliveryChanged?: () => void }> = ({ o
   return (
     <div className="w-full space-y-6">
       {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center space-x-2 px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-bold mb-2">
-            <Mail className="w-3.5 h-3.5 text-blue-600" />
+      <div className="bg-gradient-to-r from-slate-900 via-medpark-900 to-slate-900 text-white rounded-3xl border border-white/10 p-6 sm:p-7 shadow-sm relative overflow-hidden flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Subtle ambient decorative glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-medpark-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 space-y-1.5">
+          <div className="inline-flex items-center space-x-2 px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-400/30 rounded-full text-xs font-bold backdrop-blur-xs">
+            <Mail className="w-3.5 h-3.5 text-blue-300" />
             <span>Hospital SMTP Distribution Log</span>
           </div>
-          <h2 className="text-xl font-black text-slate-900">Email Outbox & Governance Audit</h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Email Outbox & Governance Audit</h2>
+          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
             Saved emails and delivery attempts for approved meeting minutes.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 relative z-10">
           <button
             onClick={fetchDeliveries}
             disabled={isLoading}
-            className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors disabled:opacity-50"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl border border-white/15 backdrop-blur-xs transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             <span>Refresh</span>

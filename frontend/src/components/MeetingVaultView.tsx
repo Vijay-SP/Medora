@@ -110,21 +110,24 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Vault Header Bar */}
-      <div className="bg-white rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+      <div className="bg-gradient-to-r from-slate-900 via-medpark-900 to-slate-900 text-white rounded-3xl border border-white/10 p-6 sm:p-7 shadow-sm relative overflow-hidden">
+        {/* Subtle ambient decorative glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-medpark-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative z-10">
           <div className="space-y-1.5 max-w-2xl">
             <div className="flex items-center space-x-2">
-              <div className="w-9 h-9 rounded-xl bg-medpark-50 text-medpark-600 flex items-center justify-center flex-shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-white/10 text-medpark-300 border border-white/15 flex items-center justify-center flex-shrink-0 backdrop-blur-xs">
                 <Archive className="w-5 h-5" />
               </div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                 Meeting Intelligence Vault
               </h1>
-              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200 tabular-nums">
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-white/10 text-white border border-white/20 tabular-nums backdrop-blur-xs">
                 {totalCount} {totalCount === 1 ? 'session' : 'sessions'}
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
               Air-gapped repository of clinical session recordings, neural transcripts, multi-language minutes, and signed document revisions.
             </p>
           </div>
@@ -133,14 +136,14 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
           <div className="flex items-center space-x-2.5 flex-shrink-0">
             <button
               onClick={onUploadRecording}
-              className="inline-flex items-center space-x-2 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 shadow-xs transition-colors"
+              className="inline-flex items-center space-x-2 px-3.5 py-2.5 rounded-xl border border-white/15 bg-white/10 hover:bg-white/20 text-xs font-bold text-white shadow-xs transition-colors backdrop-blur-xs focus-visible:ring-2 focus-visible:ring-medpark-400"
             >
-              <UploadCloud className="w-4 h-4 text-blue-600" />
+              <UploadCloud className="w-4 h-4 text-blue-400" />
               <span>Upload Audio</span>
             </button>
             <button
               onClick={onStartLiveMeeting}
-              className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-xs font-bold text-white shadow-xs transition-colors"
+              className="inline-flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-bold text-white shadow-xs transition-colors focus-visible:ring-2 focus-visible:ring-rose-400"
             >
               <Mic className="w-4 h-4" />
               <span>Start Live Session</span>
@@ -149,7 +152,7 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="mt-6 pt-5 border-t border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-3 relative z-10">
           {/* Search box */}
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
@@ -158,12 +161,12 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search sessions by title, type, or attendee..."
-              className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-slate-300 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+              className="w-full text-xs pl-9 pr-8 py-2 rounded-xl border border-white/15 bg-white/10 text-white placeholder-slate-400 focus:bg-white/15 focus:outline-none focus:ring-2 focus:ring-medpark-400 backdrop-blur-xs"
             />
             {searchQuery && (
               <button
                 onClick={() => onSearchChange('')}
-                className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-slate-700"
+                className="absolute right-2.5 top-2 p-0.5 text-slate-400 hover:text-white"
                 title="Clear search"
               >
                 <X className="w-3.5 h-3.5" />
@@ -176,7 +179,7 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
             <select
               value={workflowFilter}
               onChange={(e) => onWorkflowFilterChange(e.target.value)}
-              className="text-xs font-semibold px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-700 focus:outline-none"
+              className="text-xs font-semibold px-3 py-2 rounded-xl border border-white/15 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-medpark-400 cursor-pointer"
             >
               <option value="all">All Workflow Modes</option>
               <option value="supervised">Supervised (Clinical Gate)</option>
@@ -186,7 +189,7 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
             <select
               value={statusFilter}
               onChange={(e) => onStatusFilterChange(e.target.value)}
-              className="text-xs font-semibold px-3 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-700 focus:outline-none"
+              className="text-xs font-semibold px-3 py-2 rounded-xl border border-white/15 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-medpark-400 cursor-pointer"
             >
               <option value="all">All Review Statuses</option>
               <option value="pending_review">Pending Review</option>
@@ -198,7 +201,7 @@ export const MeetingVaultView: React.FC<MeetingVaultViewProps> = ({
             {hasFilters && (
               <button
                 onClick={onClearFilters}
-                className="px-3 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                className="px-3 py-2 text-xs font-bold text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-xl transition-colors backdrop-blur-xs"
               >
                 Reset Filters
               </button>

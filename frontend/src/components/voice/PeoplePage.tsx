@@ -941,45 +941,48 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
   return (
     <div className="w-full space-y-6">
       {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-        <div className="space-y-1.5 min-w-0">
-          <div className="flex items-center space-x-2">
+      <div className="bg-gradient-to-r from-slate-900 via-medpark-900 to-slate-900 text-white rounded-3xl border border-white/10 p-6 sm:p-7 shadow-sm relative overflow-hidden flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+        {/* Subtle ambient decorative glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-medpark-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="space-y-2 min-w-0 relative z-10">
+          <div className="flex items-center space-x-2.5">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+                className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-white/10 hover:bg-white/20 border border-white/15 transition-colors backdrop-blur-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-400"
               >
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />
                 <span>Back</span>
               </button>
             )}
-            <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center space-x-2">
-              <Users className="w-5 h-5 text-medpark-600" aria-hidden="true" />
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center space-x-2.5">
+              <Users className="w-6 h-6 text-medpark-400" aria-hidden="true" />
               <span>People &amp; Voices</span>
             </h2>
           </div>
-          <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+          <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
             Enrolled voices let the system <em>suggest</em> who is speaking in a recording. A suggestion
             reaches a document only after a human reviewer confirms it on the meeting's Speakers tab.
             Each person enrolls their own voice, here, after giving consent.
           </p>
           <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-semibold">
-            <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 tabular-nums">
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 tabular-nums backdrop-blur-xs">
               {counts.enrolled} enrolled
             </span>
-            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 tabular-nums">
+            <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-slate-300 border border-white/15 tabular-nums backdrop-blur-xs">
               {counts.notEnrolled} not enrolled
             </span>
             {counts.needsReenrollment > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-900 border border-amber-300 tabular-nums">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30 tabular-nums backdrop-blur-xs">
                 {counts.needsReenrollment} need re-enrollment
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 lg:items-end flex-shrink-0">
+        <div className="flex flex-col gap-2.5 lg:items-end flex-shrink-0 relative z-10">
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -987,14 +990,14 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
               disabled={isLoading}
               aria-label="Refresh people"
               title="Refresh"
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+              className="p-2 text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 rounded-xl border border-white/15 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-400 backdrop-blur-xs"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'motion-safe:animate-spin' : ''}`} aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-medpark-500 hover:bg-medpark-600 text-white text-xs font-bold rounded-lg shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500 focus-visible:ring-offset-1"
+              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-medpark-500 hover:bg-medpark-400 text-white text-xs font-bold rounded-xl shadow-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-400"
             >
               <Plus className="w-4 h-4" aria-hidden="true" />
               <span>Add person</span>
@@ -1004,23 +1007,23 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
           {/* Embedder status, read from the server: never claim availability the backend did not report. */}
           <div
             role="status"
-            className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+            className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-[11px] font-bold border backdrop-blur-xs ${
               !status
-                ? 'bg-slate-50 text-slate-500 border-slate-200'
+                ? 'bg-white/10 text-slate-400 border-white/15'
                 : status.enabled && status.embedder_available
-                  ? 'bg-slate-50 text-slate-700 border-slate-200'
-                  : 'bg-amber-50 text-amber-900 border-amber-300'
+                  ? 'bg-white/10 text-white border-white/20'
+                  : 'bg-amber-500/20 text-amber-300 border-amber-400/30'
             }`}
             title={status?.space_id ? `Embedding space ${status.space_id}` : 'Embedder status not reported'}
           >
             <Cpu
               className={`w-3.5 h-3.5 ${
-                status?.enabled && status?.embedder_available ? 'text-emerald-500' : 'text-amber-500'
+                status?.enabled && status?.embedder_available ? 'text-emerald-400' : 'text-amber-400'
               }`}
               aria-hidden="true"
             />
             <span className="font-mono">{status?.model || 'speaker embedder'}</span>
-            <span className="font-medium">
+            <span className="font-medium text-slate-300">
               {!status
                 ? 'status unknown'
                 : !status.enabled
