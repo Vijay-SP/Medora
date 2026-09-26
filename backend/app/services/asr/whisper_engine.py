@@ -222,7 +222,10 @@ class WindowResult:
     echo_redecoded: bool = False         # the hotword hint was echoed; decoded again without it
 
 
-class MedparkBatchedPipeline(BatchedInferencePipeline):
+_BaseBatched = BatchedInferencePipeline if BatchedInferencePipeline is not None else object
+
+
+class MedparkBatchedPipeline(_BaseBatched):
     """
     faster-whisper 1.2.1 BatchedInferencePipeline with RESTRICTED per-chunk language identification.
 
