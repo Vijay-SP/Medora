@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ShieldCheck,
   Cpu,
@@ -10,10 +10,34 @@ import {
   CheckCircle2,
   Server,
   Sparkles,
+  Languages,
 } from 'lucide-react';
 import { MedoraLogo } from './MedoraLogo';
+import { apiClient } from '../api/client';
+import { AsrServiceReadiness } from '../types';
 
 export const SettingsView: React.FC = () => {
+  // Live ASR runtime as reported by /ready: undefined = probe pending, null = probe failed.
+  const [asr, setAsr] = useState<AsrServiceReadiness | null | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .getReadiness()
+      .then((r) => {
+        if (!cancelled) setAsr(r.asr_service ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setAsr(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const asrValue = (v: string | undefined) => v || 'not reported';
+  const asrLanguages = asr?.languages && asr.languages.length > 0 ? asr.languages.map((l) => l.toUpperCase()).join(' / ') : undefined;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
@@ -66,6 +90,65 @@ export const SettingsView: React.FC = () => {
               <span className="text-slate-500">Languages Supported</span>
               <span className="font-semibold text-slate-800">Romanian, Russian, English (Mixed)</span>
             </div>
+          </div>
+
+          {/* Live ASR runtime, read from /ready (what Whisper actually does right now, not the static claims above) */}
+          <div className="pt-3 border-t border-slate-100 space-y-1">
+            <div className="flex items-center space-x-1.5">
+              <Languages className="w-3.5 h-3.5 text-purple-600" aria-hidden="true" />
+              <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-600">ASR Runtime (live)</h4>
+            </div>
+            {asr === undefined && <p className="text-[11px] text-slate-400">Probing /ready...</p>}
+            {asr === null && (
+              <p className="text-[11px] text-amber-700">Readiness probe did not answer; ASR runtime state unknown.</p>
+            )}
+            {asr && (
+              <div className="divide-y divide-slate-100 text-xs">
+                <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Model</span>
+                  <span className="font-mono font-semibold text-slate-800">
+                    {asr.model_name}
+                    {!asr.cached_locally && <span className="ml-1 font-sans font-bold text-amber-700">(not cached)</span>}
+                  </span>
+                </div>
+                <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Resolved Device</span>
+                  <span
+                    className={`font-mono font-bold px-2 py-0.5 rounded ${
+                      asr.resolved_device === 'cuda'
+                        ? 'text-emerald-700 bg-emerald-50'
+                        : asr.resolved_device
+                        ? 'text-amber-700 bg-amber-50'
+                        : 'text-slate-500 bg-slate-50'
+                    }`}
+                    title={`Configured: ${asr.device}`}
+                  >
+                    {asrValue(asr.resolved_device)}
+                  </span>
+                </div>
+                <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Strategy</span>
+                  <span className="font-mono font-semibold text-slate-800">{asrValue(asr.strategy)}</span>
+                </div>
+                <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Languages (restricted LID)</span>
+                  <span className="font-mono font-semibold text-slate-800">{asrLanguages || 'not reported'}</span>
+                </div>
+                <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Code-Switching</span>
+                  {asr.code_switching ? (
+                    <span className="inline-flex items-center space-x-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
+                      <span>Per-window language ID</span>
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-slate-500">
+                      {asr.code_switching === false ? 'Off (single-language pass)' : 'not reported'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

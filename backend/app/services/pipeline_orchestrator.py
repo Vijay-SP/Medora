@@ -48,6 +48,29 @@ _GPU_STAGE_LOCK = asyncio.Semaphore(1)
 HUMAN_CONFIRMED_ATTRIBUTION_STATES = frozenset({"confirmed", "corrected"})
 
 
+def collect_asr_stats() -> dict:
+    """
+    Snapshot of the ASR engine's last run (strategy, window languages, rescoring, garbage flags, RTF)
+    as published by whisper_engine.last_run_stats. Read defensively: an engine build without the
+    attribute, or a stage entered before any transcription, yields {} rather than an AttributeError.
+    Copied so a later run cannot mutate the dict already persisted on this meeting.
+    """
+    stats = getattr(whisper_engine, "last_run_stats", None)
+    return dict(stats) if isinstance(stats, dict) else {}
+
+
+def record_asr_stats(meeting: Meeting, stats: dict) -> None:
+    """
+    Stores the ASR run statistics on the meeting when the model carries the asr_stats field
+    (additive contract K1). A Meeting model without the field logs the stats instead of raising:
+    pydantic rejects assignment to an undeclared attribute, and the audit line must never fail a run.
+    """
+    if "asr_stats" in Meeting.model_fields:
+        meeting.asr_stats = stats
+    elif stats:
+        logger.warning(f"Meeting model has no asr_stats field; ASR run statistics not persisted: {stats}")
+
+
 def find_human_attributed_segments(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
     """
     Returns the segments that claim a human-confirmed speaker identity.
@@ -132,8 +155,18 @@ class PipelineOrchestrator:
                 segments = await asyncio.to_thread(asr_engine.transcribe, normalized_path)
                 await asyncio.to_thread(asr_engine.release_model)
 
-                # Recorded after the run so a CPU fallback taken inside the engine is visible in the audit
+                # Recorded after the run so a CPU fallback taken inside the engine is visible in the audit,
+                # together with the per-window language statistics of this transcription (strategy,
+                # window_languages, rescored_windows, garbage_flagged, rtf) for the reviewer and the docs.
                 meeting.asr_device_used = asr_engine.device
+                asr_stats = collect_asr_stats()
+                record_asr_stats(meeting, asr_stats)
+                if asr_stats:
+                    logger.info(
+                        f"ASR run stats for meeting {meeting_id}: strategy={asr_stats.get('strategy')} "
+                        f"device={asr_stats.get('device')} windows={asr_stats.get('windows')} "
+                        f"window_languages={asr_stats.get('window_languages')} rtf={asr_stats.get('rtf')}"
+                    )
                 repository.save_meeting(meeting)
 
                 # Handle No-Speech audio accurately without fabricating data

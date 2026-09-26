@@ -65,7 +65,31 @@ class Settings(BaseSettings):
     # log. Off by default so the failure is loud; set True only for machines without a usable GPU
     # where WHISPER_DEVICE cannot simply be pinned to "cpu".
     ALLOW_CPU_FALLBACK: bool = False
-    
+    # Code-switching ASR (docs/ASR_CODE_SWITCHING.md). A single whole-file pass detects ONE language from the
+    # first 30 s and stamps it on every segment, so Romanian speech in a Russian-opened meeting comes out as
+    # Cyrillic nonsense. Instead the file is cut into VAD-packed windows and each window gets its own
+    # language identification restricted to WHISPER_LANGUAGES (unrestricted LID may pick "en" and make
+    # Whisper TRANSLATE the speech). "batched" only switches the decode path; the restriction is the same.
+    WHISPER_STRATEGY: Literal["windowed", "batched"] = "windowed"
+    WHISPER_LANGUAGES: list[str] = ["ro", "ru", "en"]
+    WHISPER_BATCH_SIZE: int = 4  # Batching costs VRAM; 4 is the margin left next to turbo on a 4 GB card
+    WHISPER_CHUNK_LENGTH_S: int = 12
+    # Window packing: hard cuts at VAD silences, no overlap. Windows below MIN merge into the previous one;
+    # windows under ~4 s carry no usable LID signal and inherit their neighbour's language.
+    ASR_WINDOW_MIN_S: float = 1.5
+    ASR_WINDOW_TARGET_S: float = 12.0
+    ASR_WINDOW_MAX_S: float = 20.0
+    ASR_WINDOW_HARD_CAP_S: float = 28.0  # Whisper's encoder consumes 30 s; never exceed it
+    # Windows whose top restricted-LID probability is below this get a second decode in the runner-up
+    # language and keep the better avg_logprob (never rescore everything: it doubles the cost).
+    ASR_LID_RESCORE_BELOW: float = 0.70
+    ASR_HOTWORDS_ENABLED: bool = True  # Per-language clinical hotwords (<= 80 tokens) instead of an initial_prompt
+    ASR_LEXICON_ENABLED: bool = True  # Post-decode clinical lexicon corrections (recorded in segment.corrections)
+    # Post-decode garbage filter: segments beyond any of these are KEPT but flagged "low_confidence_asr".
+    ASR_GARBAGE_LOGPROB: float = -1.5
+    ASR_GARBAGE_COMPRESSION: float = 2.4
+    ASR_GARBAGE_NO_SPEECH: float = 0.85
+
     # LLM & Extraction Configuration (Ollama native API, Qwen3-4B-Instruct Q4_K_M via deploy/ollama/Modelfile)
     # The LLM (~2.7 GB) and Whisper (~2 GB) cannot share the 4 GB VRAM: the extraction engine unloads the
     # model after each meeting so the next ASR run has the GPU to itself.

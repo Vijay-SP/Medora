@@ -22,10 +22,33 @@ DEFAULT_ANONYMOUS_SPEAKER = "Speaker 1"
 AttributionState = Literal["anonymous", "suggested", "confirmed", "corrected"]
 MatchBand = Literal["strong", "moderate", "weak", "no_match"]
 
+# Language identification provenance for a segment (code-switching ASR, see docs/ASR_CODE_SWITCHING.md).
+# "legacy" = persisted before per-window LID existed (the language was stamped by a single whole-file pass).
+LanguageSource = Literal["acoustic", "text", "rescored", "manual", "legacy"]
+# The three languages the restricted LID may choose between; a segment's `language` may additionally be
+# "mixed" (see language_spans) or "und" (undetermined), and stored data may hold other whisper codes.
+SpanLanguage = Literal["ro", "ru", "en"]
+UNDETERMINED_LANGUAGE = "und"
+MIXED_LANGUAGE = "mixed"
+
 
 def is_anonymous_speaker_label(label: Any) -> bool:
     """True for the only speaker labels a transcript may carry: 'Speaker N'."""
     return isinstance(label, str) and ANONYMOUS_SPEAKER_PATTERN.match(label) is not None
+
+
+class LanguageSpan(BaseModel):
+    """A contiguous run of one language inside a segment, in absolute audio seconds (only set for 'mixed')."""
+    start: float
+    end: float
+    language: SpanLanguage
+
+
+class Correction(BaseModel):
+    """A lexicon substitution the ASR post-processor applied; `was` is the original decoder output."""
+    was: str
+    now: str
+    score: float = Field(..., description="Match score of the lexicon rule that fired (not a probability)")
 
 
 class SpeakerSuggestion(BaseModel):
@@ -50,8 +73,21 @@ class TranscriptSegment(BaseModel):
     raw_text: str = Field(..., description="Verbatim raw ASR output preserving original language")
     corrected_text: Optional[str] = Field(None, description="Human reviewer correction if amended")
 
-    language: str = Field(default="ro", description="Detected language code (ro, ru, en, or mixed)")
+    language: str = Field(default="ro", description="Detected language code (ro, ru, en, mixed or und)")
     confidence: float = Field(default=1.0, ge=0.0, le=1.0, description="Model decoding confidence")
+
+    # Per-window language identification (all defaulted so persisted transcripts keep loading).
+    language_confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Restricted LID probability of `language`")
+    language_source: LanguageSource = Field(default="legacy", description="Which LID stage decided `language`")
+    language_spans: list[LanguageSpan] = Field(default_factory=list, description="Per-language runs when language is 'mixed'")
+    corrections: list[Correction] = Field(
+        default_factory=list,
+        description="Lexicon corrections already applied to raw_text; the decoder output is recoverable from `was`"
+    )
+    window_index: Optional[int] = Field(None, description="Index of the VAD decode window that produced the segment")
+    asr_avg_logprob: Optional[float] = Field(None, description="faster-whisper avg_logprob of the source segment")
+    asr_compression_ratio: Optional[float] = Field(None, description="faster-whisper compression_ratio of the source segment")
+    asr_no_speech_prob: Optional[float] = Field(None, description="faster-whisper no_speech_prob of the source segment")
 
     is_flagged: bool = Field(default=False, description="Flagged for uncertainty, drug names, or numbers")
     flag_reason: Optional[str] = Field(None, description="Explanation for human reviewer check")
@@ -145,18 +181,26 @@ class Transcript(BaseModel):
     duration_seconds: float = 0.0
 
     def compute_stats(self) -> None:
-        """Computes total words, languages, and duration from segments."""
+        """
+        Computes total words, languages, and duration from segments.
+
+        languages_detected lists real languages only: "und" is dropped and "mixed" is expanded into the
+        languages of its spans (a mixed segment without spans contributes nothing). Sorted; falls back to
+        ["ro"] only when no segment carries a determinable language.
+        """
         all_words = 0
-        langs = set()
+        langs: set[str] = set()
         max_end = 0.0
         for seg in self.segments:
             all_words += len(seg.display_text.split())
-            if seg.language:
+            if seg.language == MIXED_LANGUAGE:
+                langs.update(span.language for span in seg.language_spans)
+            elif seg.language and seg.language != UNDETERMINED_LANGUAGE:
                 langs.add(seg.language)
             if seg.end > max_end:
                 max_end = seg.end
         self.total_words = all_words
-        self.languages_detected = sorted(list(langs)) if langs else ["ro"]
+        self.languages_detected = sorted(langs) if langs else ["ro"]
         self.duration_seconds = max_end
 
     def to_indexed_lines(self) -> tuple[list[str], list[str]]:

@@ -23,8 +23,8 @@ For a shared Mac-hosted processing host (Metal-accelerated Whisper ASR on port 8
     ┌─────────▼─────────────────────────────────────────────────────┐
     │              Sequential AI Worker Pipeline                    │
     │  1. Audio Normalizer (FFmpeg 16kHz mono PCM)                  │
-    │  2. Silero VAD filter inside faster-whisper (500 ms silence)  │
-    │  3. Multilingual ASR (faster-whisper + RO/RU/EN Glossary)     │
+    │  2. Silero VAD -> 12 s decode windows (no overlap)            │
+    │  3. ASR per window: restricted RO/RU/EN LID + forced decode   │
     │  4. Embedding Diarizer (VAD + CAM++, anonymous 'Speaker N')   │
     │  5. Local LLM Extractor (Ollama, Qwen3-4B, map/reduce)        │
     │  6. Index Grounding + Name Guard + Evidence Validator         │
@@ -83,8 +83,11 @@ f:\DEEPTECH\
 │   │   │   │   └── vad.py                # Standalone pause slicer (not wired; ASR uses Whisper's VAD filter)
 │   │   │   ├── asr/
 │   │   │   │   ├── base.py               # Abstract Base ASR Engine
-│   │   │   │   ├── whisper_engine.py     # faster-whisper with GPU/CPU auto-fallback
-│   │   │   │   └── glossary.py           # Medpark RO/RU/EN medical conditioning glossary
+│   │   │   │   ├── whisper_engine.py     # faster-whisper: VAD windows, per-window restricted LID, forced decode
+│   │   │   │   ├── windowing.py          # Silero VAD chunks packed into 1.5-28 s decode windows
+│   │   │   │   ├── text_lid.py           # Script/stop-word language check that gates a re-decode
+│   │   │   │   ├── lexicon.py            # Near-miss clinical-name correction, recorded in corrections[]
+│   │   │   │   └── glossary.py           # HOTWORDS_BY_LANG (<= 80 tokens) + review-flag vocabulary
 │   │   │   ├── diarization/
 │   │   │   │   ├── base.py               # Abstract Base Diarizer
 │   │   │   │   ├── fbank.py              # Exact Kaldi fbank + CMN front-end (never swap it)
@@ -129,7 +132,9 @@ f:\DEEPTECH\
 │       ├── test_voice_profiles_api.py    # Enrollment flow through the API (SAPI samples)
 │       ├── test_speaker_confirmation_flow.py  # /speakers confirm / correct / reject, 409s, revisions
 │       ├── test_speaker_diarization_groundtruth.py # SAPI two-voice meeting recovered by the diarizer
-│       └── test_delivery_body_has_no_names.py # Email body/subject/payload carry no person names
+│       ├── test_delivery_body_has_no_names.py # Email body/subject/payload carry no person names
+│       ├── test_asr_text_lid_and_windowing.py # Text LID, window packing, lexicon, hotword token budget (offline)
+│       └── test_asr_engine_options.py    # Engine decode options / restricted LID against a fake model (no CUDA)
 │
 ├── frontend/                             # React + Vite + TypeScript + Tailwind UI
 │   ├── src/
@@ -165,7 +170,9 @@ f:\DEEPTECH\
 ├── scripts/
 │   ├── verify_speaker_embedder.py        # Embedder separation gate (two SAPI voices; --real for the audit recording)
 │   ├── verify_gpu.py                     # Proves Whisper really runs on CUDA
+│   ├── asr_ab_benchmark.py               # baseline vs windowed vs batched ASR on the audit wav (GPU-gated)
 │   └── voice_e2e_gpu.py                  # GPU-gated end-to-end voice proof through the HTTP API
+├── docs/ASR_CODE_SWITCHING.md            # Per-window RO/RU/EN decode: options, measured before/after, non-claims
 ├── docs/LLM_EXTRACTION.md                # LLM architecture, provisioning, measured numbers
 ├── docs/VOICE_PROFILES.md                # Speaker identity: safety architecture, measured numbers, non-claims
 │
@@ -190,10 +197,12 @@ f:\DEEPTECH\
 - **Local Mail Catcher:** Connects to **Mailpit** on `127.0.0.1:1025` with zero data leaving the host.
 - **Self-Contained Fonts:** Document rendering supports Romanian diacritics (`ș`, `ț`, `ă`, `î`, `â`) and Cyrillic without hosted Google Fonts.
 
-### B. Romanian / Russian / English Code-Switching Solution
-- **VAD Pause Segmentation:** Transcription runs with faster-whisper's built-in Silero VAD filter (500 ms minimum silence), so speech is cut on natural pauses instead of arbitrary fixed windows. A standalone pause slicer with a hard 12 s chunk budget lives in `backend/app/services/audio/vad.py` but is not yet wired into the transcription path.
-- **Multilingual Conditioning Prompt:** Whisper's decoder is primed with a curated Medpark dictionary across Romanian, Russian, and English medical and conversational terms. Prompt carry-over between windows is disabled, so the glossary can never be echoed back as if it had been spoken.
-- **Language Detection:** Whisper auto-detects the spoken language and every segment carries that label. Detection is currently performed once per recording, not per utterance, so a meeting that switches language mid-way is stamped with its primary detected language.
+### B. Romanian / Russian / English Code-Switching (measured, not marketed)
+Details, every decoder option with its reason, and the non-claims: [`docs/ASR_CODE_SWITCHING.md`](docs/ASR_CODE_SWITCHING.md).
+- **The problem it replaces:** the previous engine ran one `model.transcribe(language=None)` pass over the whole file, so faster-whisper picked one language from the first 30 s and stamped it everywhere. On the real 703 s audit recording 222/248 segments came out `ru`, Romanian clinical speech was rendered as Cyrillic nonsense (`Хемодинамик, инстабил` for *hemodinamic instabil*), the opening 27.7 s was a hallucinated term list, and most segments had integer-second bounds with zero gaps.
+- **What runs now:** Silero VAD chunks packed into non-overlapping decode windows (1.5 s min, 12 s target, 20 s max, 28 s hard cap); one encoder pass per window; language identification restricted to `WHISPER_LANGUAGES` (`ro`, `ru`, `en`) and forced into the decoder; short windows (< ~4 s) inherit the neighbour's language; a script/stop-word text check gates a second decode with the runner-up language when the acoustic probability is below 0.70 or the text disagrees; per-language hotwords (<= 80 tokens) replace the 257-token prompt that overflowed Whisper's 223-token slot; `word_timestamps=True` so bounds come from the word alignment; garbage decodes are kept and flagged `low_confidence_asr`, never deleted. `multilingual=True` was rejected because its unrestricted LID chose English on Romanian speech and Whisper translated it.
+- **Measured:** research probe (CPU, first 180 s of the audit recording): 13 windows, 11 `ru` + 2 `ro`; the window at 56.5-79 s flipped from Cyrillic gibberish to *"Asa, transferat acolo, acolo continuo a fost descărcat volemic"* (`avg_logprob` -0.48 vs -0.83). One GPU run of `scripts/asr_ab_benchmark.py --strategy windowed --seconds 180` (26 Sep): wall 15.3 s, **RTF 0.085** (projects to ~5 min of ASR per hour of audio), 15 windows (ru 12 / ro 2 / en 1), 0 integer-second durations, first segment 3.96 s instead of a 27.7 s hallucination, and the 56.5-74.6 s window decoded as readable Romanian (*"… a fost descărcat volemic și acum … instabilitate hemodinamică, tensiunele 80x40 cu dozele 0.22 de nor …"*). The same run also shows what is still wrong: three Russian windows echo the hotword list as if spoken, one segment is Whisper's *"Субтитры создавал DimaTorzok"* hallucination, and 4.8-23.7 s is Romanian speech labelled `en` after rescoring. The single-pass baseline on the full 703 s file was 134 s (RTF 0.19); a like-for-like `--strategy baseline` run on the same excerpt has not been recorded yet.
+- **Not quantified:** there is no annotated reference transcript for any hospital recording, so RO/RU/EN word accuracy and language-identification accuracy on real meeting audio are unknown. The per-language counts and `language_confidence` values in the transcript are model outputs, not ground truth. The standalone slicer in `backend/app/services/audio/vad.py` remains unwired (energy threshold, one cough resets it).
 
 ### C. 100% Evidence Grounding (Anti-Hallucination)
 - **Index Grounding:** The LLM only ever sees numbered transcript lines and cites line indices; the engine copies the quote, timestamps and speaker from the cited segment. The model cannot author a citation.
@@ -303,6 +312,8 @@ $env:PYTHONPATH="backend"
 .venv\Scripts\python.exe backend/tests/test_speaker_confirmation_flow.py   # /speakers confirm flow through TestClient
 .venv\Scripts\python.exe backend/tests/test_speaker_diarization_groundtruth.py # SAPI two-voice meeting (skips without SAPI/ONNX)
 .venv\Scripts\python.exe backend/tests/test_voice_profiles_api.py          # enrollment API flow (SAPI samples)
+.venv\Scripts\python.exe backend/tests/test_asr_text_lid_and_windowing.py  # text LID, window packing, lexicon, hotword budget (offline)
+.venv\Scripts\python.exe backend/tests/test_asr_engine_options.py          # engine options vs a fake model, restricted LID (no CUDA)
 ```
 The voice tests set their own isolated `DATA_DIR`/`UPLOADS_DIR`/`EXPORTS_DIR`/`FIXTURES_DIR`/`VOICEPRINTS_DIR`
 before importing `app`. `scripts/voice_e2e_gpu.py` is the only voice script that touches the GPU and refuses to
@@ -323,8 +334,8 @@ python deploy/scripts/benchmark_speed.py data/fixtures/Medpark_audio.m4a
 | Pipeline Stage | 12-min Audio Benchmark (pre-LLM run, not re-measured) | Projected 60-min Meeting |
 |---|---|---|
 | Audio Normalization (16kHz mono) | 1.8s | ~9.0s |
-| VAD (Silero filter inside faster-whisper) | included in ASR | included in ASR |
-| Multilingual Speech-to-Text | 16.2s | ~1.4 min (GPU) / ~5.5 min (CPU) |
+| VAD (Silero, window packing) | included in ASR | included in ASR |
+| Multilingual Speech-to-Text | old single whole-file pass, GPU: 134 s for the 703 s audit recording (RTF 0.19); windowed per-language path, GPU, first 180 s of the same recording: 15.3 s (RTF 0.085, one run, `scripts/asr_ab_benchmark.py`) | RTF 0.085 -> ~5 min (projection from a 180 s excerpt); the budget needs <= ~9 min |
 | Speaker Diarization (Silero VAD + CAM++ embeddings, CPU) | ≈ 11 s for the 703 s audit recording (VAD + embedding, 4 threads; not this file) | ~1 min (projection) |
 | LLM Minutes & Evidence Extraction | not measured on this file (the earlier 2.5s was the heuristic parser) | ~2 min (estimate, see below) |
 | PDF & DOCX Generation | 0.8s | ~4.0s |
