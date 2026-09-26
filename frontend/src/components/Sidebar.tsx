@@ -179,10 +179,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 : 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800'
             }`}
           >
-            <div className="relative flex items-center justify-center">
-              <Mic className="w-4 h-4 flex-shrink-0" />
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-300 animate-ping" />
-            </div>
+            <Mic className="w-4 h-4 flex-shrink-0" />
             {!isCollapsed && <span className="truncate">Start Live Meeting</span>}
           </button>
 
