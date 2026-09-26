@@ -39,6 +39,7 @@ from typing import Optional  # noqa: E402
 from unittest.mock import patch  # noqa: E402
 
 import numpy as np  # noqa: E402
+import soundfile as sf  # noqa: E402
 try:
     from faster_whisper.transcribe import Segment, TranscriptionOptions, Word
 except ImportError:
