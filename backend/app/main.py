@@ -28,6 +28,7 @@ from app.core.exceptions import (
 from app.core.logging import logger
 from app.models.meeting import ProcessingStatus
 from app.storage.repository import repository
+from app.services.asr.whisper_engine import whisper_engine
 from app.services.diarization.embedder import SPACE_MODEL_NAME, speaker_embedder
 from app.services.extraction.llm_client import llm_client
 from app.services.pipeline_orchestrator import ACTIVE_PROCESSING_STATUSES
@@ -252,6 +253,29 @@ async def _llm_model_loaded() -> bool:
         return False
 
 
+def _asr_readiness(cached_locally: bool) -> dict:
+    """
+    ASR block of /ready. Reads only configuration and the engine's resolved device: nothing here
+    loads Whisper (a probe pulling ~2 GB into VRAM would collide with a running extraction LLM).
+    The strategy/language keys are read with their contract defaults so the probe stays truthful
+    while the engine and settings are upgraded independently. "code_switching" is true only when a
+    per-window strategy runs language identification restricted to a fixed language set.
+    """
+    strategy = getattr(settings, "WHISPER_STRATEGY", "windowed")
+    languages = list(getattr(settings, "WHISPER_LANGUAGES", settings.SUPPORTED_LANGUAGES))
+    resolved_device = getattr(whisper_engine, "device", None)
+    return {
+        "model_name": settings.WHISPER_MODEL_NAME,
+        "cached_locally": cached_locally,
+        "device": settings.WHISPER_DEVICE,
+        "resolved_device": resolved_device,
+        "compute_type": getattr(whisper_engine, "compute_type", None),
+        "strategy": strategy,
+        "languages": languages,
+        "code_switching": strategy in ("windowed", "batched") and len(languages) > 0,
+    }
+
+
 def _voice_id_readiness() -> dict:
     """
     Speaker identification status for /ready. The feature is usable only when the flag is on AND the
@@ -337,11 +361,7 @@ async def readiness_check():
             "ready": storage_ok,
             "data_dir": str(settings.DATA_DIR)
         },
-        "asr_service": {
-            "model_name": settings.WHISPER_MODEL_NAME,
-            "cached_locally": asr_cached,
-            "device": settings.WHISPER_DEVICE
-        },
+        "asr_service": _asr_readiness(asr_cached),
         "llm_service": {
             "endpoint": settings.LLM_API_BASE_URL,
             "engine": "ollama",

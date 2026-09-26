@@ -20,10 +20,19 @@ class BaseASREngine(ABC):
     ) -> list[TranscriptSegment]:
         """
         Transcribes the given 16kHz mono WAV file into a sequence of timestamped segments.
-        
+
         :param audio_path: Path to normalized audio file.
-        :param initial_prompt: Contextual conditioning prompt (glossary + code-switch tokens).
-        :param language: Fixed language code or None for dynamic auto-detection per chunk.
-        :return: List of TranscriptSegment objects with exact start/end seconds and text.
+        :param initial_prompt: Accepted for compatibility and IGNORED by the faster-whisper engine: prompt
+            conditioning hallucinated the glossary as speech (docs/ASR_CODE_SWITCHING.md); engines use short
+            per-language hotwords instead.
+        :param language: Fixed language code ("ro", "ru", "en") forced on every decode window, or None for
+            per-window language identification restricted to settings.WHISPER_LANGUAGES.
+        :return: List of TranscriptSegment objects with absolute start/end seconds and text. Beyond the
+            historical fields, engines fill: language (ro | ru | en | mixed | und), language_confidence,
+            language_source (acoustic | text | rescored), language_spans (per-language runs when "mixed"),
+            corrections (lexicon edits already applied to raw_text; the decoder output is `was`),
+            window_index (decode window that produced the segment) and the raw decoder metrics
+            asr_avg_logprob / asr_compression_ratio / asr_no_speech_prob. Segments that fail the garbage
+            filter are kept and flagged with flag_reason "low_confidence_asr", never dropped.
         """
         pass

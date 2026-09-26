@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TranscriptSegment } from '../types';
+import { TranscriptSegment, LanguageSpan } from '../types';
 import { useToast } from './Toast';
 import {
   Play,
@@ -21,6 +21,49 @@ interface TranscriptViewerProps {
   onUpdateSegment: (segmentId: string, correctedText: string) => Promise<void>;
   currentTime?: number;
 }
+
+// Display order of language codes in the filter bar; unknown codes sort after the known ones.
+const LANGUAGE_ORDER = ['ro', 'ru', 'en', 'mixed', 'und'];
+const languageRank = (lang: string) => {
+  const i = LANGUAGE_ORDER.indexOf(lang);
+  return i === -1 ? LANGUAGE_ORDER.length : i;
+};
+
+// Unique span languages of a mixed segment in order of first appearance ("RO·RU").
+const spanLanguages = (spans?: LanguageSpan[]) =>
+  Array.from(new Set((spans || []).map((s) => s.language.toLowerCase())));
+
+// Chip text. Never colour-only: RO / RU / EN / RO·RU (mixed, from its spans) / ?? (undetermined).
+const getLanguageLabel = (lang: string, spans?: LanguageSpan[]) => {
+  const code = (lang || 'und').toLowerCase();
+  if (code === 'mixed') {
+    const parts = spanLanguages(spans);
+    return parts.length > 0 ? parts.map((p) => p.toUpperCase()).join('·') : 'MIXED';
+  }
+  if (code === 'und') return '??';
+  return code.toUpperCase();
+};
+
+const getLanguageAriaLabel = (lang: string) => {
+  switch ((lang || 'und').toLowerCase()) {
+    case 'ro':
+      return 'Romanian';
+    case 'ru':
+      return 'Russian';
+    case 'en':
+      return 'English';
+    case 'mixed':
+      return 'Mixed languages';
+    case 'und':
+      return 'Undetermined language';
+    default:
+      return lang.toUpperCase();
+  }
+};
+
+const describeSpans = (spans?: LanguageSpan[]) =>
+  (spans || []).map((s) => `${s.language.toUpperCase()} ${s.start.toFixed(1)}–${s.end.toFixed(1)} s`).join(', ') ||
+  'no span detail';
 
 export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   segments,
@@ -45,6 +88,14 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
   // Collect unique speakers
   const speakers = Array.from(new Set(segments.map((s) => s.speaker)));
+
+  // Languages actually present in this transcript, in a stable display order (known codes first,
+  // then anything else an older record may carry). The filter only offers what exists.
+  const languagesPresent = Array.from(new Set(segments.map((s) => (s.language || 'und').toLowerCase()))).sort(
+    (a, b) => languageRank(a) - languageRank(b) || a.localeCompare(b)
+  );
+  // A pill selected for a language that no longer exists (segments reloaded) must not blank the list.
+  const effectiveLanguage = selectedLanguage !== 'all' && !languagesPresent.includes(selectedLanguage) ? 'all' : selectedLanguage;
 
   // Determine active segment based on current playback time
   const activeSegmentId = segments.find(
@@ -84,7 +135,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   // Filter segments
   const filteredSegments = segments.filter((seg) => {
     // Language filter
-    if (selectedLanguage !== 'all' && seg.language.toLowerCase() !== selectedLanguage.toLowerCase()) {
+    if (effectiveLanguage !== 'all' && (seg.language || 'und').toLowerCase() !== effectiveLanguage) {
       return false;
     }
     // Speaker filter
@@ -131,9 +182,10 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
     const text = filteredSegments
       .map(
         (s) =>
-          `[${formatTimestamp(s.start)} - ${formatTimestamp(s.end)}] ${s.speaker} (${s.language.toUpperCase()}): ${
-            s.display_text || s.corrected_text || s.raw_text
-          }`
+          `[${formatTimestamp(s.start)} - ${formatTimestamp(s.end)}] ${s.speaker} (${getLanguageLabel(
+            s.language,
+            s.language_spans
+          )}): ${s.display_text || s.corrected_text || s.raw_text}`
       )
       .join('\n');
 
@@ -147,17 +199,39 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  // Colour is a secondary cue only: every chip also carries a distinct text label (see getLanguageLabel).
   const getLanguageColor = (lang: string) => {
-    switch (lang.toLowerCase()) {
+    switch ((lang || 'und').toLowerCase()) {
       case 'ro':
         return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'ru':
         return 'bg-amber-50 text-amber-700 border-amber-200';
       case 'en':
         return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'mixed':
+        return 'bg-violet-50 text-violet-700 border-violet-300 border-dashed';
+      case 'und':
+        return 'bg-slate-100 text-slate-500 border-slate-300 border-dotted';
       default:
         return 'bg-slate-100 text-slate-700 border-slate-200';
     }
+  };
+
+  // Tooltip for the language chip: how the language was decided and how sure the restricted LID was.
+  const getLanguageTitle = (seg: TranscriptSegment) => {
+    const lang = (seg.language || 'und').toLowerCase();
+    const base =
+      lang === 'mixed'
+        ? `Code-switched utterance: ${describeSpans(seg.language_spans)}`
+        : lang === 'und'
+        ? 'Language undetermined (too little speech for identification)'
+        : `Language ${getLanguageLabel(lang)}`;
+    const source = seg.language_source ? `, source: ${seg.language_source}` : '';
+    const conf =
+      typeof seg.language_confidence === 'number' && seg.language_confidence > 0
+        ? `, confidence ${Math.round(seg.language_confidence * 100)}%`
+        : '';
+    return `${base}${source}${conf}`;
   };
 
   const renderHighlightedText = (text: string, query: string) => {
@@ -254,19 +328,20 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
             className="flex items-center space-x-1 bg-white p-1 rounded-lg border border-slate-200"
           >
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 ml-1.5 mr-1">Lang:</span>
-            {['all', 'ro', 'ru', 'en'].map((lang) => (
+            {['all', ...languagesPresent].map((lang) => (
               <button
                 key={lang}
                 onClick={() => setSelectedLanguage(lang)}
-                aria-pressed={selectedLanguage === lang}
-                aria-label={lang === 'all' ? 'All languages' : lang.toUpperCase()}
+                aria-pressed={effectiveLanguage === lang}
+                aria-label={lang === 'all' ? 'All languages' : getLanguageAriaLabel(lang)}
+                title={lang === 'all' ? 'All languages' : getLanguageAriaLabel(lang)}
                 className={`flex-1 py-1 text-[11px] font-bold uppercase rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40 ${
-                  selectedLanguage === lang
+                  effectiveLanguage === lang
                     ? 'bg-medpark-500 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {lang}
+                {lang === 'all' ? 'all' : getLanguageLabel(lang)}
               </button>
             ))}
           </div>
@@ -346,9 +421,25 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                     className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border ${getLanguageColor(
                       seg.language
                     )}`}
+                    title={getLanguageTitle(seg)}
                   >
-                    {seg.language}
+                    {getLanguageLabel(seg.language, seg.language_spans)}
+                    <span className="sr-only">, {getLanguageAriaLabel(seg.language)}</span>
                   </span>
+
+                  {seg.corrections && seg.corrections.length > 0 && (
+                    <span
+                      lang="en"
+                      className="inline-flex items-center space-x-1 text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap"
+                      title={seg.corrections.map((c) => `${c.was} → ${c.now}`).join('\n')}
+                    >
+                      <Sparkles className="w-3 h-3 text-sky-600" aria-hidden="true" />
+                      <span>corrected</span>
+                      <span className="sr-only">
+                        by the clinical lexicon: {seg.corrections.map((c) => `${c.was} to ${c.now}`).join('; ')}
+                      </span>
+                    </span>
+                  )}
 
                   {isLowConfidence && !seg.corrected_text && (
                     <span

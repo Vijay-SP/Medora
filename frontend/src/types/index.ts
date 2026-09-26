@@ -47,6 +47,27 @@ export interface Meeting {
   error_message?: string;
   // Device Whisper actually ran on for the last pipeline run ("cuda" / "cpu"); absent on older records.
   asr_device_used?: string | null;
+  // Telemetry of the last ASR run (strategy, windows, window_languages, rtf, ...); empty/absent on old records.
+  asr_stats?: AsrRunStats;
+}
+
+// Free-form telemetry copied from whisper_engine.last_run_stats; every key is optional.
+export interface AsrRunStats {
+  strategy?: string;
+  device?: string;
+  compute_type?: string;
+  windows?: number;
+  window_languages?: Record<string, number>;
+  rescored_windows?: number;
+  garbage_flagged?: number;
+  integer_second_durations?: number;
+  zero_gaps?: number;
+  seconds_vad?: number;
+  seconds_encode_decode?: number;
+  seconds_total?: number;
+  audio_seconds?: number;
+  rtf?: number;
+  [key: string]: unknown;
 }
 
 export interface MeetingCreate {
@@ -74,6 +95,25 @@ export interface SpeakerSuggestion {
   space_id: string;
 }
 
+// Code-switching ASR: which stage decided a segment's language. "legacy" = stamped by the old
+// single whole-file pass (persisted before per-window language identification existed).
+export type LanguageSource = 'acoustic' | 'text' | 'rescored' | 'manual' | 'legacy';
+export type SpanLanguage = 'ro' | 'ru' | 'en';
+
+// A contiguous run of one language inside a "mixed" segment, in absolute audio seconds.
+export interface LanguageSpan {
+  start: number;
+  end: number;
+  language: SpanLanguage;
+}
+
+// A clinical-lexicon substitution the ASR post-processor already applied to raw_text.
+export interface Correction {
+  was: string;
+  now: string;
+  score: number; // match score of the lexicon rule, not a probability
+}
+
 export interface TranscriptSegment {
   id: string;
   start: number;
@@ -84,10 +124,19 @@ export interface TranscriptSegment {
   raw_text: string;
   corrected_text?: string;
   display_text: string;
-  language: string;
+  language: string; // ro | ru | en | mixed | und (older records may hold other whisper codes)
   confidence: number;
   is_flagged: boolean;
   flag_reason?: string;
+  // Per-window language identification (all optional so pre-code-switching transcripts still type-check).
+  language_confidence?: number; // restricted-LID probability of `language`, 0 on legacy records
+  language_source?: LanguageSource;
+  language_spans?: LanguageSpan[]; // only populated when language === 'mixed'
+  corrections?: Correction[]; // lexicon corrections already applied; the decoder output is in `was`
+  window_index?: number | null;
+  asr_avg_logprob?: number | null;
+  asr_compression_ratio?: number | null;
+  asr_no_speech_prob?: number | null;
   // V3 attribution fields (all optional so pre-voice-id transcripts still type-check).
   cluster_id?: string | null; // "SPEAKER_01"
   attribution_state?: AttributionState;
@@ -241,10 +290,23 @@ export interface VoiceIdReadiness {
   enrolled_people: number;
 }
 
+// ASR block of /ready. `device` is the configured setting ("auto"/"cuda"/"cpu"); `resolved_device` is what
+// Whisper actually runs on. `code_switching` is true when per-window restricted language identification
+// is active (strategy windowed/batched). The last four keys are absent on backends built before it.
+export interface AsrServiceReadiness {
+  model_name: string;
+  cached_locally: boolean;
+  device: string;
+  resolved_device?: string;
+  strategy?: string;
+  languages?: string[];
+  code_switching?: boolean;
+}
+
 export interface ReadinessResponse {
   ready: boolean;
   storage?: { ready: boolean; data_dir: string };
-  asr_service?: { model_name: string; cached_locally: boolean; device: string };
+  asr_service?: AsrServiceReadiness;
   llm_service?: LlmServiceReadiness;
   smtp_service?: { host: string; reachable: boolean };
   voice_id?: VoiceIdReadiness;

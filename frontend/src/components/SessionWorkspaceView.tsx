@@ -45,8 +45,12 @@ interface SessionWorkspaceViewProps {
   pipelineProgress: number;
   pipelineStage: string;
   stageDetail: string;
-  activeTab: 'minutes' | 'transcript';
-  setActiveTab: (tab: 'minutes' | 'transcript') => void;
+  activeTab: 'minutes' | 'transcript' | 'speakers';
+  setActiveTab: (tab: 'minutes' | 'transcript' | 'speakers') => void;
+  /** Speaker identification tab: shown only while /ready reports voice identification as enabled. */
+  showSpeakersTab?: boolean;
+  /** Content of the Speakers tab (the confirmation panel); rendered when activeTab === 'speakers'. */
+  speakersPanel?: React.ReactNode;
   playbackTime: number;
   setPlaybackTime: (time: number) => void;
   playbackBucketRef: React.MutableRefObject<number>;
@@ -91,6 +95,8 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   stageDetail,
   activeTab,
   setActiveTab,
+  showSpeakersTab = false,
+  speakersPanel = null,
   playbackTime,
   setPlaybackTime,
   playbackBucketRef,
@@ -467,14 +473,40 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>Multilingual Transcript &amp; Speakers</span>
+          <span>{showSpeakersTab ? 'Multilingual Transcript' : 'Multilingual Transcript & Speakers'}</span>
           {transcript && (
             <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold tabular-nums">
               {transcript.segments.length}
             </span>
           )}
         </button>
+
+        {showSpeakersTab && (
+          <button
+            role="tab"
+            id="tab-speakers"
+            aria-selected={activeTab === 'speakers'}
+            aria-controls="panel-speakers"
+            onClick={() => setActiveTab('speakers')}
+            title="Speakers (3)"
+            className={`pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 transition-colors ${
+              activeTab === 'speakers'
+                ? 'border-medpark-500 text-medpark-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Users className="w-4 h-4" aria-hidden="true" />
+            <span>Speakers</span>
+          </button>
+        )}
       </div>
+
+      {/* Tab 3: Speaker identification (names reach the document only after reviewer confirmation) */}
+      {activeTab === 'speakers' && showSpeakersTab && (
+        <div role="tabpanel" id="panel-speakers" aria-labelledby="tab-speakers">
+          {speakersPanel}
+        </div>
+      )}
 
       {/* Tab 1: Minutes Content */}
       {activeTab === 'minutes' && (

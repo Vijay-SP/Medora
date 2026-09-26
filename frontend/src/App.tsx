@@ -13,10 +13,10 @@ import { ReviewApprovalModal } from './components/ReviewApprovalModal';
 import { MeetingIntakeModal } from './components/MeetingIntakeModal';
 import { DeliveryOutboxDrawer } from './components/DeliveryOutboxDrawer';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import { WaveformPlayer, WaveformPlayerRef } from './components/WaveformPlayer';
+import { WaveformPlayerRef } from './components/WaveformPlayer';
 import { PeoplePage } from './components/voice/PeoplePage';
 import { SpeakerConfirmationPanel } from './components/voice/SpeakerConfirmationPanel';
-import { Trash2, AlertCircle, Users, FileText, Layers, ChevronLeft } from 'lucide-react';
+import { Trash2, AlertCircle } from 'lucide-react';
 
 // Workspace tabs. 'speakers' exists only while /ready reports voice identification as enabled.
 type WorkspaceTab = 'minutes' | 'transcript' | 'speakers';
@@ -727,125 +727,8 @@ export const App: React.FC = () => {
             />
           )}
 
-          {/* Speaker identification entry point: the workspace view owns the Minutes/Transcript
-              tab strip, so the third tab is reached from here (or with the "3" key). */}
-          {view === 'workspace' &&
-            currentPage === 'workspace' &&
-            voiceIdEnabled &&
-            selectedMeeting &&
-            transcript &&
-            activeTab !== 'speakers' && (
-              <div className="max-w-6xl mx-auto mb-6 bg-white rounded-2xl border border-slate-200 shadow-xs px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start space-x-2.5 min-w-0">
-                  <Users className="w-4 h-4 text-medpark-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    <span className="font-bold text-slate-800">Speaker identification.</span> Review who
-                    is speaking before sign-off; names reach the document only after your confirmation.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('speakers')}
-                  title="Speakers (3)"
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-medpark-700 bg-medpark-50 hover:bg-medpark-100 border border-medpark-200 rounded-xl transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
-                >
-                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Open Speakers tab</span>
-                  <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-white border border-medpark-200 rounded">3</kbd>
-                </button>
-              </div>
-            )}
-
-          {/* Page 2a: Speakers tab of the workspace (page-shaped; the waveform stays mounted here so
-              review clips can play through the same player ref) */}
-          {view === 'workspace' && currentPage === 'workspace' && activeTab === 'speakers' && selectedMeeting && (
-            <div className="max-w-6xl mx-auto space-y-6">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3 min-w-0">
-                  <button
-                    onClick={() => setCurrentPage('dashboard')}
-                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-                    title="Return to Dashboard view"
-                  >
-                    <ChevronLeft className="w-4 h-4" aria-hidden="true" />
-                    <span>Dashboard</span>
-                  </button>
-                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
-                  <h2 className="text-sm font-black text-slate-900 truncate">{selectedMeeting.title}</h2>
-                  {minutes && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 tabular-nums flex-shrink-0">
-                      Revision {minutes.revision}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {selectedMeeting.original_audio_path && (
-                <WaveformPlayer
-                  ref={waveformRef}
-                  audioUrl={apiClient.getAudioStreamUrl(selectedMeeting.id)}
-                  onTimeUpdate={(t) => {
-                    const bucket = Math.floor(t * 4);
-                    if (bucket === playbackBucketRef.current) return;
-                    playbackBucketRef.current = bucket;
-                    setPlaybackTime(t);
-                  }}
-                />
-              )}
-
-              <div role="tablist" aria-label="Meeting workspace tabs" className="border-b border-slate-200 flex space-x-6">
-                <button
-                  role="tab"
-                  id="tab-minutes"
-                  aria-selected={false}
-                  onClick={() => setActiveTab('minutes')}
-                  title="Official Minutes (1)"
-                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <FileText className="w-4 h-4" aria-hidden="true" />
-                  <span>Official Minutes (MoM)</span>
-                </button>
-                <button
-                  role="tab"
-                  id="tab-transcript"
-                  aria-selected={false}
-                  onClick={() => setActiveTab('transcript')}
-                  title="Transcript (2)"
-                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-colors"
-                >
-                  <Layers className="w-4 h-4" aria-hidden="true" />
-                  <span>Multilingual Transcript &amp; Speakers</span>
-                </button>
-                <button
-                  role="tab"
-                  id="tab-speakers"
-                  aria-selected={true}
-                  title="Speakers (3)"
-                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-medpark-500 text-medpark-600"
-                >
-                  <Users className="w-4 h-4" aria-hidden="true" />
-                  <span>Speakers</span>
-                </button>
-              </div>
-
-              <div role="tabpanel" id="panel-speakers" aria-labelledby="tab-speakers">
-                <SpeakerConfirmationPanel
-                  meetingId={selectedMeeting.id}
-                  revision={minutes?.revision ?? null}
-                  onSeek={handlePlayRange}
-                  currentTime={playbackTime}
-                  reloadKey={speakersReloadKey}
-                  onAttributionChanged={() => {
-                    loadMeetingData(selectedMeeting.id);
-                    loadMeetings();
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
           {/* Page 2: Session Workspace View */}
-          {view === 'workspace' && currentPage === 'workspace' && activeTab !== 'speakers' && (
+          {view === 'workspace' && currentPage === 'workspace' && (
             <SessionWorkspaceView
               meetings={meetings}
               selectedMeeting={selectedMeeting}
@@ -859,6 +742,22 @@ export const App: React.FC = () => {
               stageDetail={stageDetail}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
+              showSpeakersTab={voiceIdEnabled}
+              speakersPanel={
+                selectedMeeting ? (
+                  <SpeakerConfirmationPanel
+                    meetingId={selectedMeeting.id}
+                    revision={minutes?.revision ?? null}
+                    onSeek={handlePlayRange}
+                    currentTime={playbackTime}
+                    reloadKey={speakersReloadKey}
+                    onAttributionChanged={() => {
+                      loadMeetingData(selectedMeeting.id);
+                      loadMeetings();
+                    }}
+                  />
+                ) : null
+              }
               playbackTime={playbackTime}
               setPlaybackTime={setPlaybackTime}
               playbackBucketRef={playbackBucketRef}

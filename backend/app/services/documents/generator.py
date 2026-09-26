@@ -41,6 +41,34 @@ ATTRIBUTION_STATE_VERB = {"confirmed": "confirmat", "corrected": "corectat"}
 ANONYMOUS_SPEAKER_LABEL = re.compile(r"^Speaker (\d+)$")
 UNASSIGNED_OWNER = "Nespecificat"
 
+# Language line of the info table ("Limbi detectate: RO, RU, EN"), printed only when the stored
+# transcript has segments: an empty transcript defaults languages_detected to ["ro"], and a
+# no-speech document must not claim a detected language.
+LANGUAGES_LABEL = "Limbi detectate:"
+LANGUAGE_COUNTS_LABEL = "Segmente per limbă:"
+
+
+def format_detected_languages(transcript: Optional[Transcript]) -> Optional[str]:
+    """'RO, RU, EN' from transcript.languages_detected (uppercased, ", "-joined); None without segments."""
+    if transcript is None or not transcript.segments or not transcript.languages_detected:
+        return None
+    return ", ".join(code.upper() for code in transcript.languages_detected)
+
+
+def format_language_segment_counts(transcript: Optional[Transcript]) -> Optional[str]:
+    """
+    'RO: 12, RU: 5, MIXED: 1' counted directly from the segments, most frequent first (ties by code).
+    A segment carrying no language code is counted under UND so the counts always sum to the segment total.
+    """
+    if transcript is None or not transcript.segments:
+        return None
+    counts: dict[str, int] = {}
+    for seg in transcript.segments:
+        code = (seg.language or "und").upper()
+        counts[code] = counts.get(code, 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ", ".join(f"{code}: {count}" for code, count in ordered)
+
 
 def truncate_quote(quote: str, limit: int) -> str:
     """
@@ -302,9 +330,6 @@ class DocumentGenerator:
 
         # Meeting Info Grid
         doc.add_heading("Informații Generale", level=2)
-        info_table = doc.add_table(rows=5, cols=2)
-        info_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        
         info_data = [
             ("Titlu Ședință:", meeting.title),
             ("Data și Ora:", meeting.scheduled_at.strftime("%Y-%m-%d %H:%M")),
@@ -312,6 +337,13 @@ class DocumentGenerator:
             ("Participanți:", ", ".join([a.name for a in meeting.attendees]) if meeting.attendees else "Conform foii de prezență"),
             ("Model extragere:", minutes.model_version)
         ]
+        # Languages of the stored transcript (per-window ASR language identification), omitted without segments
+        languages_line = format_detected_languages(transcript)
+        if languages_line:
+            info_data.append((LANGUAGES_LABEL, languages_line))
+            info_data.append((LANGUAGE_COUNTS_LABEL, format_language_segment_counts(transcript) or ""))
+        info_table = doc.add_table(rows=len(info_data), cols=2)
+        info_table.alignment = WD_TABLE_ALIGNMENT.CENTER
         for row_idx, (label, val) in enumerate(info_data):
             info_table.rows[row_idx].cells[0].paragraphs[0].add_run(label).bold = True
             info_table.rows[row_idx].cells[1].paragraphs[0].add_run(val)
@@ -431,6 +463,15 @@ class DocumentGenerator:
 
         pdf.set_font(use_font, "", 10)
         pdf.cell(0, 6, safe_text(f"Data: {meeting.scheduled_at.strftime('%Y-%m-%d %H:%M')} | Tip: {meeting.meeting_type.value.upper()} | Rev.{minutes.revision}"), new_x="LMARGIN", new_y="NEXT")
+        # Languages of the stored transcript (per-window ASR language identification), omitted without segments
+        languages_line = format_detected_languages(transcript)
+        if languages_line:
+            pdf.set_x(10)
+            pdf.multi_cell(
+                190, 6,
+                safe_text(f"{LANGUAGES_LABEL} {languages_line} | {LANGUAGE_COUNTS_LABEL} {format_language_segment_counts(transcript)}"),
+                new_x="LMARGIN", new_y="NEXT"
+            )
         pdf.ln(3)
 
         # Executive Summary Section

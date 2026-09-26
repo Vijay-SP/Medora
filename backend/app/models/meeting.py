@@ -99,6 +99,9 @@ class Meeting(MeetingBase):
     normalized_audio_path: Optional[str] = None
     audio_duration_seconds: float = 0.0
     asr_device_used: Optional[str] = None  # "cuda" / "cpu" actually used by the ASR stage of the last run
+    # Free-form ASR telemetry copied from whisper_engine.last_run_stats after Stage 2 (strategy, windows,
+    # window_languages, rtf, ...); empty on records processed before per-window LID existed.
+    asr_stats: dict[str, Any] = Field(default_factory=dict)
 
     # State tracking
     processing_status: ProcessingStatus = ProcessingStatus.IDLE
