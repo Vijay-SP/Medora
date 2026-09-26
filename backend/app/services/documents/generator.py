@@ -332,9 +332,7 @@ class DocumentGenerator:
         doc.add_heading("Informații Generale", level=2)
         info_data = [
             ("Titlu Ședință:", meeting.title),
-            ("Data și Ora:", meeting.scheduled_at.strftime("%Y-%m-%d %H:%M")),
-            ("Revizie Document:", f"Rev.{minutes.revision} ({datetime.now().strftime('%Y-%m-%d %H:%M')})"),
-            ("Participanți:", ", ".join([a.name for a in meeting.attendees]) if meeting.attendees else "Conform foii de prezență"),
+            ("Participanți:", ", ".join([f"{a.name} ({a.department})" if a.department else a.name for a in meeting.attendees]) if meeting.attendees else "Conform foii de prezență"),
             ("Model extragere:", minutes.model_version)
         ]
         # Languages of the stored transcript (per-window ASR language identification), omitted without segments
@@ -463,6 +461,10 @@ class DocumentGenerator:
 
         pdf.set_font(use_font, "", 10)
         pdf.cell(0, 6, safe_text(f"Data: {meeting.scheduled_at.strftime('%Y-%m-%d %H:%M')} | Tip: {meeting.meeting_type.value.upper()} | Rev.{minutes.revision}"), new_x="LMARGIN", new_y="NEXT")
+        if meeting.attendees:
+            att_str = ", ".join(f"{a.name} ({a.department})" if a.department else a.name for a in meeting.attendees)
+            pdf.set_x(10)
+            pdf.multi_cell(190, 5, safe_text(f"Participanți: {att_str}"), new_x="LMARGIN", new_y="NEXT")
         # Languages of the stored transcript (per-window ASR language identification), omitted without segments
         languages_line = format_detected_languages(transcript)
         if languages_line:

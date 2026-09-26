@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { MeetingCreate, MeetingType, WorkflowMode, Attendee } from '../types';
 import { AudioRecorder } from './AudioRecorder';
 import { UploadCloud, FileAudio, Users, Sparkles, X, Plus, Trash2, Rocket, Shield, AlertTriangle, Mic, Radio } from 'lucide-react';
+import { ParticipantSelector } from './ParticipantSelector';
 
 // Mirrors FileManager.ALLOWED_AUDIO_EXTENSIONS so the rejection happens before upload.
 const ALLOWED_AUDIO_EXTENSIONS = ['.wav', '.mp3', '.m4a', '.webm', '.ogg', '.aac', '.flac', '.mp4'];
@@ -26,14 +27,8 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
   const [agenda, setAgenda] = useState('');
   const [audioFile, setAudioFile] = useState<File | null>(null);
   
-  // Default Medpark attendees
-  const [attendees, setAttendees] = useState<Attendee[]>([
-    { id: '1', name: 'Dr. Elena Ceban', role: 'Medical Director / Surgeon', email: 'elena.ceban@medpark.md' },
-    { id: '2', name: 'Dr. Mihail Popov', role: 'Chief of Intensive Care (ICU)', email: 'mihail.popov@medpark.md' },
-  ]);
-
-  const [newAttendeeName, setNewAttendeeName] = useState('');
-  const [newAttendeeEmail, setNewAttendeeEmail] = useState('');
+  // Meeting attendees
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [titleError, setTitleError] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
@@ -90,10 +85,7 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const canAddAttendee = Boolean(newAttendeeName.trim() && newAttendeeEmail.trim());
-  const isDirty = Boolean(
-    title.trim() || agenda.trim() || audioFile || newAttendeeName.trim() || newAttendeeEmail.trim()
-  );
+  const isDirty = Boolean(title.trim() || agenda.trim() || audioFile || attendees.length > 0);
 
   const handleSelectAudioFile = (file: File) => {
     const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
@@ -104,25 +96,6 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
     }
     setAudioError(null);
     setAudioFile(file);
-  };
-
-  const handleAddAttendee = () => {
-    if (!canAddAttendee) return;
-    setAttendees([
-      ...attendees,
-      {
-        id: Date.now().toString(),
-        name: newAttendeeName.trim(),
-        role: 'Participant',
-        email: newAttendeeEmail.trim(),
-      },
-    ]);
-    setNewAttendeeName('');
-    setNewAttendeeEmail('');
-  };
-
-  const handleRemoveAttendee = (id: string) => {
-    setAttendees(attendees.filter((a) => a.id !== id));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -411,82 +384,11 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
           </div>
 
           {/* Attendees Management */}
-          <div className="space-y-2">
-            <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-              <span className="flex items-center space-x-1.5">
-                <Users className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-                <span>Registered Participants (<span className="tabular-nums">{attendees.length}</span>)</span>
-              </span>
-              <span className="text-[11px] font-medium text-slate-500">Everyone listed receives the signed minutes</span>
-            </div>
-
-            <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 rounded-lg border border-slate-200 p-2 space-y-1">
-              {attendees.length === 0 && (
-                <p className="text-xs text-slate-400 italic p-2">No participants added yet.</p>
-              )}
-              {attendees.map((att) => (
-                <div key={att.id} className="flex items-center justify-between text-xs py-1 px-1.5 hover:bg-slate-50 rounded">
-                  <div className="min-w-0 truncate">
-                    <span className="font-semibold text-slate-800">{att.name}</span>
-                    <span className="text-slate-500 ml-2 font-mono">{att.email}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttendee(att.id)}
-                    aria-label={`Remove ${att.name}`}
-                    title={`Remove ${att.name}`}
-                    className="flex-shrink-0 text-slate-400 hover:text-rose-600 p-1.5 rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick add attendee */}
-            <div className="flex items-center space-x-2 pt-1">
-              <label htmlFor="intake-att-name" className="sr-only">Participant name</label>
-              <input
-                id="intake-att-name"
-                type="text"
-                value={newAttendeeName}
-                onChange={(e) => setNewAttendeeName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddAttendee();
-                  }
-                }}
-                placeholder="Participant name"
-                className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
-              />
-              <label htmlFor="intake-att-email" className="sr-only">Participant email</label>
-              <input
-                id="intake-att-email"
-                type="email"
-                value={newAttendeeEmail}
-                onChange={(e) => setNewAttendeeEmail(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddAttendee();
-                  }
-                }}
-                placeholder="name@example.org"
-                className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
-              />
-              <button
-                type="button"
-                onClick={handleAddAttendee}
-                disabled={!canAddAttendee}
-                aria-label="Add participant"
-                title="Add participant"
-                className="flex-shrink-0 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
-              >
-                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
+          <ParticipantSelector
+            attendees={attendees}
+            onChange={setAttendees}
+            disabled={isSubmitting}
+          />
 
           {/* Submit */}
           <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">

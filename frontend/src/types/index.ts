@@ -20,6 +20,8 @@ export interface Attendee {
   name: string;
   role: string;
   email: string;
+  department?: string;
+  person_id?: string;
 }
 
 export interface Meeting {
@@ -330,6 +332,10 @@ export interface VoiceProfile {
   person_name: string;
   role: string;
   email: string;
+  department?: string | null;
+  title?: string | null;
+  primary_language?: string | null;
+  specialty?: string | null;
   state: EnrollmentState;
   sample_count: number;
   total_sample_seconds: number;
@@ -346,6 +352,10 @@ export interface VoiceProfileCreate {
   person_name: string;
   role: string;
   email: string;
+  department?: string;
+  title?: string;
+  primary_language?: string;
+  specialty?: string;
 }
 
 export type SampleVerdict = 'good' | 'usable' | 'reject';

@@ -230,8 +230,11 @@ export const apiClient = {
   // The collection routes are declared as "/" under the prefix, and the SPA static mount at "/"
   // swallows the slash-less path before Starlette can redirect it: keep the trailing slash
   // (same reason as /meetings/).
-  async listVoiceProfiles(): Promise<VoiceProfile[]> {
-    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/`);
+  async listVoiceProfiles(department?: string): Promise<VoiceProfile[]> {
+    const url = department
+      ? `${API_BASE}/voice-profiles/?department=${encodeURIComponent(department)}`
+      : `${API_BASE}/voice-profiles/`;
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch voice profiles'));
     return res.json();
   },

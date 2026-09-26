@@ -74,6 +74,10 @@ class Person(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=200)
     role: str = "Member"
     email: str = ""
+    department: Optional[str] = Field(None, description="Hospital department, e.g. Cardiology, ICU, Surgery")
+    title: Optional[str] = Field(None, description="Medical/academic title, e.g. Dr., Prof.")
+    primary_language: Optional[str] = Field("ro", description="Preferred spoken language in meetings (ro, ru, en)")
+    specialty: Optional[str] = Field(None, description="Clinical specialty or sub-specialization")
     aliases: list[str] = Field(default_factory=list)
     is_active: bool = True
     consent: Optional[ConsentRecord] = None
@@ -114,6 +118,10 @@ class PersonSummary(BaseModel):
     person_name: str
     role: str
     email: str
+    department: Optional[str] = None
+    title: Optional[str] = None
+    primary_language: Optional[str] = None
+    specialty: Optional[str] = None
     state: EnrollmentState
     sample_count: int
     total_sample_seconds: float
@@ -144,6 +152,10 @@ def summarize_person(person: Person, active_space_id: Optional[str]) -> PersonSu
         person_name=person.full_name,
         role=person.role,
         email=person.email,
+        department=person.department,
+        title=person.title,
+        primary_language=person.primary_language,
+        specialty=person.specialty,
         state=state,
         sample_count=reference.sample_count if reference else 0,
         total_sample_seconds=round(reference.total_speech_seconds, 2) if reference else 0.0,

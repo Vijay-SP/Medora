@@ -46,6 +46,10 @@ class VoiceProfileCreateRequest(BaseModel):
     person_name: str = Field(..., min_length=1, max_length=200)
     role: str = "Member"
     email: str = ""
+    department: Optional[str] = None
+    title: Optional[str] = None
+    primary_language: Optional[str] = "ro"
+    specialty: Optional[str] = None
 
 
 class ConsentRequest(BaseModel):
@@ -158,16 +162,28 @@ def get_voice_status() -> VoiceStatusResponse:
 # redirect_slashes, so a "/"-only route is a 404/405 from the built UI. "/" stays as a hidden alias.
 @router.get("", response_model=list[PersonSummary])
 @router.get("/", response_model=list[PersonSummary], include_in_schema=False)
-def list_voice_profiles() -> list[PersonSummary]:
-    """Lists active people with their enrollment state."""
-    return [_summary(person) for person in repository.list_people()]
+def list_voice_profiles(department: Optional[str] = None) -> list[PersonSummary]:
+    """Lists active people with their enrollment state, optionally filtered by department."""
+    people = repository.list_people()
+    if department:
+        dep_clean = department.strip().lower()
+        people = [p for p in people if p.department and p.department.strip().lower() == dep_clean]
+    return [_summary(person) for person in people]
 
 
 @router.post("", response_model=PersonSummary, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=PersonSummary, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_voice_profile(payload: VoiceProfileCreateRequest) -> PersonSummary:
     """Creates a person record; enrollment requires consent and samples afterwards."""
-    person = Person(full_name=payload.person_name.strip(), role=payload.role.strip() or "Member", email=payload.email.strip())
+    person = Person(
+        full_name=payload.person_name.strip(),
+        role=payload.role.strip() or "Member",
+        email=payload.email.strip(),
+        department=payload.department.strip() if payload.department else None,
+        title=payload.title.strip() if payload.title else None,
+        primary_language=payload.primary_language.strip() if payload.primary_language else "ro",
+        specialty=payload.specialty.strip() if payload.specialty else None,
+    )
     repository.save_person(person)
     logger.info(f"Created voice profile {person.id} for {person.full_name}")
     return _summary(person)
