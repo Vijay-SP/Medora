@@ -228,6 +228,7 @@ export interface MinutesOfMeeting {
   title: string;
   meeting_type: string;
   summary_ro: string;
+  summary_ru?: string | null;
   summary_en?: string;
   agenda_topics: string[];
   decisions: DecisionItem[];

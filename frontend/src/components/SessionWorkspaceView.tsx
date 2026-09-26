@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Meeting,
   Transcript,
@@ -32,6 +32,7 @@ import {
   ChevronLeft,
   ChevronDown,
   Plus,
+  Globe,
 } from 'lucide-react';
 
 interface SessionWorkspaceViewProps {
@@ -63,6 +64,8 @@ interface SessionWorkspaceViewProps {
   setIsEditingSummary: (v: boolean) => void;
   summaryRoEdit: string;
   setSummaryRoEdit: (v: string) => void;
+  summaryRuEdit: string;
+  setSummaryRuEdit: (v: string) => void;
   summaryEnEdit: string;
   setSummaryEnEdit: (v: string) => void;
   isSavingMinutes: boolean;
@@ -109,6 +112,8 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   setIsEditingSummary,
   summaryRoEdit,
   setSummaryRoEdit,
+  summaryRuEdit,
+  setSummaryRuEdit,
   summaryEnEdit,
   setSummaryEnEdit,
   isSavingMinutes,
@@ -116,6 +121,8 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   onUpdateSegment,
   onSeekAudio,
 }) => {
+  const [momLanguage, setMomLanguage] = useState<'all' | 'ro' | 'ru' | 'en'>('all');
+
   if (!selectedMeeting) {
     return (
       <div className="max-w-4xl mx-auto p-12 bg-white rounded-3xl border border-slate-200 text-center space-y-4 shadow-xs">
@@ -513,6 +520,90 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
         <div role="tabpanel" id="panel-minutes" className="space-y-6">
           {minutes ? (
             <>
+              {/* MoM Language Switcher Bar */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-medpark-50 text-medpark-600 flex items-center justify-center flex-shrink-0">
+                    <Globe className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-900">
+                      MoM Language / Limba Proces-Verbal / Язык протокола
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      {momLanguage === 'all'
+                        ? 'Displaying all 3 languages (Română • Русский • English) simultaneously'
+                        : `Viewing minutes in ${
+                            momLanguage === 'ro'
+                              ? 'Română (RO)'
+                              : momLanguage === 'ru'
+                              ? 'Русский (RU)'
+                              : 'English (EN)'
+                          }`}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  className="inline-flex p-1 bg-slate-100 rounded-xl space-x-1 self-start md:self-auto overflow-x-auto max-w-full"
+                  role="radiogroup"
+                  aria-label="MoM Language View"
+                >
+                  <button
+                    onClick={() => setMomLanguage('all')}
+                    role="radio"
+                    aria-checked={momLanguage === 'all'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                      momLanguage === 'all'
+                        ? 'bg-white text-medpark-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🌐</span>
+                    <span>All 3 Languages</span>
+                  </button>
+                  <button
+                    onClick={() => setMomLanguage('ro')}
+                    role="radio"
+                    aria-checked={momLanguage === 'ro'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                      momLanguage === 'ro'
+                        ? 'bg-white text-medpark-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🇲🇩</span>
+                    <span>Română (RO)</span>
+                  </button>
+                  <button
+                    onClick={() => setMomLanguage('ru')}
+                    role="radio"
+                    aria-checked={momLanguage === 'ru'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                      momLanguage === 'ru'
+                        ? 'bg-white text-medpark-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🇷🇺</span>
+                    <span>Русский (RU)</span>
+                  </button>
+                  <button
+                    onClick={() => setMomLanguage('en')}
+                    role="radio"
+                    aria-checked={momLanguage === 'en'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                      momLanguage === 'en'
+                        ? 'bg-white text-medpark-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🇬🇧</span>
+                    <span>English (EN)</span>
+                  </button>
+                </div>
+              </div>
+
               {isFallbackExtraction(minutes.model_version) && (
                 <div
                   role="alert"
@@ -557,6 +648,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                     <button
                       onClick={() => {
                         setSummaryRoEdit(minutes.summary_ro || '');
+                        setSummaryRuEdit(minutes.summary_ru || '');
                         setSummaryEnEdit(minutes.summary_en || '');
                         setIsEditingSummary(true);
                       }}
@@ -592,38 +684,198 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                 </div>
 
                 {isEditingSummary ? (
-                  <div className="space-y-3 pt-2">
+                  <div className="space-y-4 pt-2">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        Romanian Summary
+                      <label className="text-xs font-bold text-slate-700 mb-1 flex items-center space-x-1.5">
+                        <span>🇲🇩</span>
+                        <span>Romanian Summary (Rezumat Executiv RO)</span>
                       </label>
                       <textarea
                         value={summaryRoEdit}
                         onChange={(e) => setSummaryRoEdit(e.target.value)}
                         rows={3}
+                        placeholder="Introduceți rezumatul executiv în limba română..."
                         className="w-full text-sm text-slate-800 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-medpark-500 focus:outline-none"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">
-                        English Summary
+                      <label className="text-xs font-bold text-slate-700 mb-1 flex items-center space-x-1.5">
+                        <span>🇷🇺</span>
+                        <span>Russian Summary (Краткое содержание протокола RU)</span>
+                      </label>
+                      <textarea
+                        value={summaryRuEdit}
+                        onChange={(e) => setSummaryRuEdit(e.target.value)}
+                        rows={3}
+                        placeholder="Введите краткое содержание протокола на русском языке..."
+                        className="w-full text-sm text-slate-800 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-medpark-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-slate-700 mb-1 flex items-center space-x-1.5">
+                        <span>🇬🇧</span>
+                        <span>English Summary (Executive Summary EN)</span>
                       </label>
                       <textarea
                         value={summaryEnEdit}
                         onChange={(e) => setSummaryEnEdit(e.target.value)}
                         rows={2}
+                        placeholder="Enter executive summary in English..."
                         className="w-full text-sm text-slate-800 p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-medpark-500 focus:outline-none"
                       />
                     </div>
                   </div>
                 ) : (
                   <>
-                    <p className="text-sm text-slate-800 leading-relaxed font-medium">{minutes.summary_ro}</p>
-                    {minutes.summary_en && (
-                      <p className="text-xs text-slate-600 italic pt-2 border-t border-slate-100">
-                        <span className="font-bold text-slate-700 not-italic mr-1">[English Translation]</span>
-                        {minutes.summary_en}
-                      </p>
+                    {momLanguage === 'all' && (
+                      <div className="space-y-3 pt-1">
+                        {/* RO */}
+                        <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-medpark-700 bg-medpark-50 px-2.5 py-0.5 rounded border border-medpark-200">
+                              🇲🇩 Română (RO)
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                            {minutes.summary_ro || (
+                              <span className="text-slate-400 italic">Niciun rezumat disponibil în limba română.</span>
+                            )}
+                          </p>
+                        </div>
+
+                        {/* RU */}
+                        <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded border border-blue-200">
+                              🇷🇺 Русский (RU)
+                            </span>
+                            {!minutes.summary_ru && (
+                              <button
+                                onClick={() => {
+                                  setSummaryRoEdit(minutes.summary_ro || '');
+                                  setSummaryRuEdit('');
+                                  setSummaryEnEdit(minutes.summary_en || '');
+                                  setIsEditingSummary(true);
+                                }}
+                                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                              >
+                                + Adaugă rezumat RU
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                            {minutes.summary_ru || (
+                              <span className="text-slate-400 italic">
+                                Резюме на русском языке еще не добавлено. Нажмите «Edit Summary», чтобы сохранить.
+                              </span>
+                            )}
+                          </p>
+                        </div>
+
+                        {/* EN */}
+                        <div className="p-3.5 bg-slate-50/70 rounded-xl border border-slate-200/80 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-200">
+                              🇬🇧 English (EN)
+                            </span>
+                            {!minutes.summary_en && (
+                              <button
+                                onClick={() => {
+                                  setSummaryRoEdit(minutes.summary_ro || '');
+                                  setSummaryRuEdit(minutes.summary_ru || '');
+                                  setSummaryEnEdit('');
+                                  setIsEditingSummary(true);
+                                }}
+                                className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-800 hover:underline"
+                              >
+                                + Add EN summary
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                            {minutes.summary_en || (
+                              <span className="text-slate-400 italic">
+                                No English summary available. Click &ldquo;Edit Summary&rdquo; to add.
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {momLanguage === 'ro' && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-medpark-700 bg-medpark-50 px-2 py-0.5 rounded border border-medpark-200">
+                            🇲🇩 Română (RO)
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                          {minutes.summary_ro || (
+                            <span className="text-slate-400 italic">Niciun rezumat disponibil în limba română.</span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+
+                    {momLanguage === 'ru' && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                            🇷🇺 Русский (RU)
+                          </span>
+                          {!minutes.summary_ru && (
+                            <button
+                              onClick={() => {
+                                setSummaryRoEdit(minutes.summary_ro || '');
+                                setSummaryRuEdit('');
+                                setSummaryEnEdit(minutes.summary_en || '');
+                                setIsEditingSummary(true);
+                              }}
+                              className="text-xs font-semibold text-blue-600 hover:underline"
+                            >
+                              + Добавить резюме (RU)
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                          {minutes.summary_ru || (
+                            <span className="text-slate-400 italic">
+                              Резюме на русском языке еще не добавлено к этой сессии. Нажмите «Edit Summary», чтобы добавить.
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    )}
+
+                    {momLanguage === 'en' && (
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                            🇬🇧 English (EN)
+                          </span>
+                          {!minutes.summary_en && (
+                            <button
+                              onClick={() => {
+                                setSummaryRoEdit(minutes.summary_ro || '');
+                                setSummaryRuEdit(minutes.summary_ru || '');
+                                setSummaryEnEdit('');
+                                setIsEditingSummary(true);
+                              }}
+                              className="text-xs font-semibold text-emerald-600 hover:underline"
+                            >
+                              + Add English Summary
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-800 leading-relaxed font-medium">
+                          {minutes.summary_en || (
+                            <span className="text-slate-400 italic">
+                              No English summary available for this session. Click &ldquo;Edit Summary&rdquo; to add one.
+                            </span>
+                          )}
+                        </p>
+                      </div>
                     )}
                   </>
                 )}
@@ -635,7 +887,13 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                   <div className="flex items-center space-x-2 mb-2">
                     <BookmarkCheck className="w-4 h-4 text-medpark-600" />
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                      Agenda Topics
+                      {momLanguage === 'ro'
+                        ? 'Subiecte Agendă'
+                        : momLanguage === 'ru'
+                        ? 'Темы повестки заседания'
+                        : momLanguage === 'en'
+                        ? 'Agenda Topics'
+                        : 'Agenda Topics / Subiecte Agendă / Темы повестки'}
                     </h4>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -652,13 +910,13 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
               )}
 
               {/* Decisions Table */}
-              <DecisionsTable decisions={minutes.decisions} onSeek={onSeekAudio} />
+              <DecisionsTable decisions={minutes.decisions} onSeek={onSeekAudio} language={momLanguage} />
 
               {/* Action Items Table */}
-              <ActionItemsTable actionItems={minutes.action_items} onSeek={onSeekAudio} />
+              <ActionItemsTable actionItems={minutes.action_items} onSeek={onSeekAudio} language={momLanguage} />
 
               {/* Risks and Unresolved Questions Table */}
-              <RisksQuestionsTable items={minutes.risks_and_questions || []} onSeek={onSeekAudio} />
+              <RisksQuestionsTable items={minutes.risks_and_questions || []} onSeek={onSeekAudio} language={momLanguage} />
             </>
           ) : (
             <div className="bg-white rounded-2xl border border-slate-200 p-10 shadow-xs text-center">

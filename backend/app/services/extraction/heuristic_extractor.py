@@ -135,6 +135,13 @@ def extract_heuristic(meeting: Meeting, transcript: Transcript) -> MinutesOfMeet
         f"cu responsabili asociați."
     )
 
+    summary_ru = (
+        f"На заседании '{meeting.title}' ({meeting.meeting_type.value.upper()}) были рассмотрены ключевые клинические и операционные "
+        f"вопросы текущей больничной деятельности. Зафиксировано {len(transcript.segments)} реплик "
+        f"на румынском, русском и английском языках. Согласовано {len(decisions)} официальных решений и распределено {len(actions)} задач "
+        f"с назначенными ответственными лицами."
+    )
+
     summary_en = (
         f"The meeting '{meeting.title}' reviewed key clinical and operational items. "
         f"A total of {len(decisions)} decisions were validated and {len(actions)} actionable tasks assigned."
@@ -155,6 +162,7 @@ def extract_heuristic(meeting: Meeting, transcript: Transcript) -> MinutesOfMeet
         title=meeting.title,
         meeting_type=meeting.meeting_type.value,
         summary_ro=summary_ro,
+        summary_ru=summary_ru,
         summary_en=summary_en,
         agenda_topics=[meeting.agenda] if meeting.agenda else ["Revizuire Cazuri Clinice & Protocoale Medpark"],
         decisions=decisions,

@@ -66,6 +66,7 @@ SYNTHESIS_SCHEMA: dict = {
     "type": "object",
     "properties": {
         "summary_ro": {"type": "string"},
+        "summary_ru": {"type": "string"},
         "summary_en": {"type": "string"},
         "agenda_topics": {"type": "array", "items": {"type": "string"}, "maxItems": 6},
     },
@@ -109,5 +110,6 @@ class MapResult(BaseModel):
 class SynthesisResult(BaseModel):
     """Answer of the single synthesis call over the merged item list."""
     summary_ro: str
+    summary_ru: Optional[str] = None
     summary_en: str
     agenda_topics: list[str] = Field(default_factory=list, max_length=6)

@@ -349,6 +349,10 @@ class DocumentGenerator:
         # Executive Summary
         doc.add_heading("Rezumat Executiv", level=2)
         doc.add_paragraph(minutes.summary_ro)
+        if minutes.summary_ru:
+            p_ru = doc.add_paragraph()
+            r_ru = p_ru.add_run(f"[RU Резюме] {minutes.summary_ru}")
+            r_ru.italic = True
         if minutes.summary_en:
             p_en = doc.add_paragraph()
             r_en = p_en.add_run(f"[EN Summary] {minutes.summary_en}")
@@ -479,10 +483,24 @@ class DocumentGenerator:
         # Executive Summary Section
         pdf.set_font(use_font, style_b, 11)
         pdf.set_fill_color(240, 244, 248)
-        pdf.cell(190, 7, safe_text("REZUMAT EXECUTIV"), fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(190, 7, safe_text("REZUMAT EXECUTIV / EXECUTIVE SUMMARY"), fill=True, new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(use_font, "", 9)
         pdf.set_x(10)
         pdf.multi_cell(190, 5, safe_text(minutes.summary_ro), new_x="LMARGIN", new_y="NEXT")
+        if minutes.summary_ru:
+            pdf.ln(1)
+            pdf.set_font(use_font, style_i, 8)
+            pdf.set_text_color(60, 60, 60)
+            pdf.set_x(10)
+            pdf.multi_cell(190, 4.5, safe_text(f"[RU] {minutes.summary_ru}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
+        if minutes.summary_en:
+            pdf.ln(1)
+            pdf.set_font(use_font, style_i, 8)
+            pdf.set_text_color(60, 60, 60)
+            pdf.set_x(10)
+            pdf.multi_cell(190, 4.5, safe_text(f"[EN] {minutes.summary_en}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
         pdf.ln(3)
 
         # Decisions
