@@ -693,9 +693,7 @@ class FasterWhisperEngine(BaseASREngine):
             return result
         if forced:
             return result
-        # A window without LID signal inherited its language: p1 says nothing about it, only a confident
-        # text disagreement may send it to the queue.
-        threshold = 0.0 if inherited else settings.ASR_LID_RESCORE_BELOW
+        threshold = settings.ASR_LID_RESCORE_BELOW
         if needs_rescoring(acoustic_language, p1, text, threshold):
             result.rescored = None
         else:
