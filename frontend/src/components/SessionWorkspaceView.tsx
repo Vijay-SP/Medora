@@ -399,21 +399,24 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
       )}
 
       {/* Meeting Meta Card Header */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col lg:flex-row lg:items-start justify-between gap-4">
-        <div className="space-y-1.5 min-w-0">
+      <div className="bg-gradient-to-r from-slate-900 via-medpark-900 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden border border-white/10 flex flex-col lg:flex-row lg:items-start justify-between gap-5">
+        {/* Subtle ambient decorative glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-medpark-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="space-y-2 min-w-0 relative z-10">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
               {selectedMeeting.title}
             </h2>
-            <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-md bg-medpark-50 text-medpark-700 border border-medpark-500/20">
+            <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-lg bg-white/10 text-white border border-white/15 backdrop-blur-xs">
               {selectedMeeting.meeting_type}
             </span>
 
             <span
-              className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold border ${
+              className={`inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-bold border backdrop-blur-xs ${
                 selectedMeeting.workflow_mode === 'auto_pilot'
-                  ? 'bg-blue-50 text-blue-800 border-blue-200'
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  ? 'bg-blue-500/20 text-blue-200 border-blue-400/30'
+                  : 'bg-emerald-500/20 text-emerald-200 border-emerald-400/30'
               }`}
             >
               {selectedMeeting.workflow_mode === 'auto_pilot' ? (
@@ -430,50 +433,50 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
             </span>
 
             {selectedMeeting.review_status === 'delivered' && (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-emerald-500/25 text-emerald-300 border border-emerald-400/40">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
                 <span>Delivered via Email</span>
               </span>
             )}
 
             {selectedMeeting.review_status === 'approved' && (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                <AlertCircle className="w-3.5 h-3.5 text-amber-700" aria-hidden="true" />
+              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-500/25 text-amber-300 border border-amber-400/40">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
                 <span>Signed - Not Delivered</span>
               </span>
             )}
 
             {selectedMeeting.processing_status === 'failed' && (
-              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-md text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600" aria-hidden="true" />
+              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-rose-500/25 text-rose-300 border border-rose-400/40">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400" aria-hidden="true" />
                 <span>Pipeline Failed</span>
               </span>
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-medium pt-1">
-            <span className="flex items-center space-x-1">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300 font-medium pt-1">
+            <span className="flex items-center space-x-1.5">
               <Calendar className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
               <span>{new Date(selectedMeeting.scheduled_at).toLocaleString()}</span>
             </span>
-            <span className="flex items-center space-x-1">
+            <span className="flex items-center space-x-1.5">
               <Clock className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
               <span>
                 Audio:{' '}
-                <span className="font-mono tabular-nums">
+                <span className="font-mono tabular-nums text-white">
                   {selectedMeeting.audio_duration_seconds.toFixed(1)}s
                 </span>
               </span>
             </span>
-            <span className="flex items-center space-x-1">
+            <span className="flex items-center space-x-1.5">
               <Users className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
               <span>
-                <span className="tabular-nums">{selectedMeeting.attendees.length}</span> participants
+                <span className="tabular-nums text-white font-bold">{selectedMeeting.attendees.length}</span> participants
               </span>
             </span>
             {selectedMeeting.processing_time_seconds > 0 && (
-              <span className="flex items-center space-x-1 font-mono tabular-nums text-emerald-700 font-bold">
-                <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="flex items-center space-x-1.5 font-mono tabular-nums text-emerald-300 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
                 <span>Pipeline: {selectedMeeting.processing_time_seconds}s</span>
               </span>
             )}
@@ -481,18 +484,21 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-2 lg:items-end flex-shrink-0">
+        <div className="flex flex-col gap-2.5 lg:items-end flex-shrink-0 relative z-10">
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <button onClick={onOpenOutbox} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl focus-visible:ring-2 focus-visible:ring-medpark-500">
+            <button
+              onClick={onOpenOutbox}
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-bold rounded-xl transition-all backdrop-blur-xs focus-visible:ring-2 focus-visible:ring-medpark-400"
+            >
               Email Outbox
             </button>
             {minutes && (
               <button
                 onClick={onCopyFullMoM}
-                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-bold rounded-xl transition-all backdrop-blur-xs focus-visible:ring-2 focus-visible:ring-medpark-400"
                 title="Copy executive summary, decisions, and action items as Markdown"
               >
-                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                <Copy className="w-3.5 h-3.5 text-slate-300" />
                 <span>Copy Full MoM</span>
               </button>
             )}
@@ -502,20 +508,20 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                 <a
                   href={apiClient.getPdfDownloadUrl(selectedMeeting.id)}
                   download
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold rounded-xl transition-colors"
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-400/30 text-xs font-bold rounded-xl transition-all backdrop-blur-xs"
                   title="Download official PDF report"
                 >
-                  <FileDown className="w-3.5 h-3.5 text-rose-600" />
+                  <FileDown className="w-3.5 h-3.5 text-rose-400" />
                   <span>PDF</span>
                 </a>
 
                 <a
                   href={apiClient.getDocxDownloadUrl(selectedMeeting.id)}
                   download
-                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 text-xs font-bold rounded-xl transition-colors"
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-200 border border-blue-400/30 text-xs font-bold rounded-xl transition-all backdrop-blur-xs"
                   title="Download official Word DOCX report"
                 >
-                  <FileDown className="w-3.5 h-3.5 text-blue-600" />
+                  <FileDown className="w-3.5 h-3.5 text-blue-400" />
                   <span>DOCX</span>
                 </a>
               </>
@@ -523,7 +529,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
 
             <button
               onClick={() => onDeleteMeeting(selectedMeeting)}
-              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors border border-slate-200"
+              className="p-2 text-slate-400 hover:text-rose-300 hover:bg-rose-500/20 rounded-xl transition-colors border border-white/10"
               title="Delete meeting record"
               aria-label="Delete meeting record"
             >
@@ -533,12 +539,12 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
             {selectedMeeting.workflow_mode === 'supervised' &&
               selectedMeeting.review_status !== 'delivered' && (
                 <>
-                  <span className="hidden sm:block w-px h-7 bg-slate-200" aria-hidden="true" />
+                  <span className="hidden sm:block w-px h-7 bg-white/20" aria-hidden="true" />
                   <button
                     onClick={onOpenApproval}
                     disabled={signOffBlockedReason !== null}
                     title={signOffBlockedReason || 'Sign off and dispatch the official minutes'}
-                    className="inline-flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed"
+                    className="inline-flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-md transition-all disabled:bg-white/10 disabled:text-slate-400 disabled:border disabled:border-white/10 disabled:cursor-not-allowed"
                   >
                     <Shield className="w-4 h-4" />
                     <span>Sign &amp; Dispatch</span>
@@ -550,7 +556,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           {selectedMeeting.workflow_mode === 'supervised' &&
             selectedMeeting.review_status !== 'delivered' &&
             signOffBlockedReason && (
-              <p className="text-[11px] font-medium text-slate-500 lg:text-right max-w-xs">
+              <p className="text-[11px] font-medium text-slate-300 lg:text-right max-w-xs">
                 Sign &amp; Dispatch unavailable: {signOffBlockedReason}
               </p>
             )}
