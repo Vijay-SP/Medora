@@ -22,7 +22,7 @@ export const MedoraLogo: React.FC<MedoraLogoProps> = ({
   }[size];
 
   return (
-    <div className={`flex items-center space-x-3 select-none ${className}`}>
+    <div className={`flex items-center ${variant === 'full' ? 'space-x-3' : ''} select-none ${className}`}>
       {/* Aurora Medical Icon */}
       <div className="relative flex-shrink-0 flex items-center justify-center">
         {/* Ambient Aurora Glow Backdrop */}
