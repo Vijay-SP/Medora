@@ -84,10 +84,10 @@ export const EmailPreview: React.FC<{ record: DeliveryRecord; onSent: () => void
           {(error || current.error_message) && <p role="alert" className="text-sm text-rose-700">{error || current.error_message}</p>}
           {current.eml_available && <div className="flex flex-wrap gap-2">
             <a className={actionStyle} href={apiClient.getDeliveryEmlUrl(current.id)} download>Download .EML</a>
-            {['saved_locally', 'failed', 'simulated'].includes(current.status) &&
+            {['saved_locally', 'failed', 'simulated', 'dispatched'].includes(current.status) &&
               <button className="px-3 py-1.5 text-xs font-bold rounded-lg bg-medpark-600 hover:bg-medpark-700 text-white shadow-xs focus-visible:ring-2 focus-visible:ring-medpark-500 disabled:opacity-50 transition-colors" disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Resend Email (via SMTP)'}</button>}
           </div>}
-          {['saved_locally', 'failed', 'simulated'].includes(current.status) && <p className="text-xs text-slate-500">Resend contacts the configured SMTP relay (127.0.0.1:1025) and sends this approved email to the recipients above.</p>}
+          {['saved_locally', 'failed', 'simulated', 'dispatched'].includes(current.status) && <p className="text-xs text-slate-500">Resend contacts the configured SMTP relay (127.0.0.1:1025) and sends this approved email to the recipients above.</p>}
         </div>
       </div>, document.body
     )}

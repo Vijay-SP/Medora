@@ -95,15 +95,15 @@ def download_delivery_eml(delivery_id: str):
 
 
 @router.post("/deliveries/{delivery_id}/send", response_model=DeliveryRecord)
-async def send_saved_delivery(delivery_id: str):
-    """Explicit send of a human-approved snapshot. Never regenerates or automatically retries."""
+async def send_saved_delivery(delivery_id: str, force: bool = False):
+    """Explicit send of a human-approved snapshot. Never regenerates or automatically retries unless requested."""
     with dispatch_lock():
         source = _get_delivery(delivery_id)
-        # If an attempt for this source or meeting already succeeded, return it rather than resending duplicates
-        successful = next((r for r in repository.list_deliveries(source.meeting_id) 
-                           if (r.retry_of == source.id or r.id == source.id) and r.status == DeliveryStatus.DISPATCHED), None)
-        if successful:
-            return successful
+        if not force:
+            successful = next((r for r in repository.list_deliveries(source.meeting_id) 
+                               if (r.retry_of == source.id or r.id == source.id) and r.status == DeliveryStatus.DISPATCHED), None)
+            if successful:
+                return successful
 
         meeting = repository.get_meeting(source.meeting_id)
         minutes = repository.get_minutes(source.meeting_id)
@@ -116,7 +116,7 @@ async def send_saved_delivery(delivery_id: str):
             delivery_router.assert_dispatchable(minutes)
         except DeliveryError as exc:
             raise HTTPException(409, exc.message)
-        if source.status not in (DeliveryStatus.SAVED_LOCALLY, DeliveryStatus.FAILED, DeliveryStatus.SIMULATED):
+        if source.status not in (DeliveryStatus.SAVED_LOCALLY, DeliveryStatus.FAILED, DeliveryStatus.SIMULATED, DeliveryStatus.DISPATCHED):
             raise HTTPException(409, f"This attempt with status '{source.status}' cannot be resent.")
 
         if not source.eml_available:

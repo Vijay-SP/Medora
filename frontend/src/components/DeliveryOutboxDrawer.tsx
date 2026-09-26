@@ -282,7 +282,7 @@ export const DeliveryOutboxDrawer: React.FC<DeliveryOutboxDrawerProps> = ({
 
               <div className="flex flex-wrap items-center gap-2">
                 <EmailPreview record={rec} onSent={() => { void loadDeliveries(); onDeliveryChanged?.(); }} />
-                {['saved_locally', 'failed', 'simulated'].includes(rec.status) && (
+                {['saved_locally', 'failed', 'simulated', 'dispatched'].includes(rec.status) && (
                   <button
                     onClick={() => handleResend(rec.id)}
                     disabled={resendingId === rec.id}

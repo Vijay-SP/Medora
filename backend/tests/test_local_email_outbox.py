@@ -296,6 +296,26 @@ class OutboxTests(unittest.TestCase):
         second = client.post(url, json={"reviewer_name": "Reviewer"}).json()["delivery_record"]
         self.assertEqual(second["status"], "saved_locally")
 
+    def test_resend_dispatched_delivery_when_forced(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        client = TestClient(app)
+        fixture = self.fixture()
+        meeting, minutes, pdf, docx = fixture
+        approval = client.post(f"/api/v1/meetings/{meeting.id}/review/approve", json={"reviewer_name": "Reviewer"}).json()
+        record = approval["delivery_record"]
+        send_url = f'/api/v1/deliveries/{record["id"]}/send'
+        with patch("aiosmtplib.send", new=AsyncMock(return_value=({}, "OK"))):
+            sent = client.post(send_url, params={"force": "true"})
+            self.assertEqual(sent.status_code, 200)
+            self.assertEqual(sent.json()["status"], "dispatched")
+            # Resend the already dispatched delivery
+            resent = client.post(f'/api/v1/deliveries/{sent.json()["id"]}/send', params={"force": "true"})
+            self.assertEqual(resent.status_code, 200)
+            self.assertEqual(resent.json()["status"], "dispatched")
+            self.assertNotEqual(resent.json()["id"], sent.json()["id"])
+            self.assertEqual(resent.json()["retry_of"], sent.json()["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

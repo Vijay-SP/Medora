@@ -254,7 +254,7 @@ export const DeliveriesView: React.FC<{ onDeliveryChanged?: () => void }> = ({ o
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
                 <div className="flex flex-wrap items-center gap-2">
                   <EmailPreview record={record} onSent={() => { void fetchDeliveries(); onDeliveryChanged?.(); }} />
-                  {['saved_locally', 'failed', 'simulated'].includes(record.status) && (
+                  {['saved_locally', 'failed', 'simulated', 'dispatched'].includes(record.status) && (
                     <button
                       onClick={() => handleResend(record.id)}
                       disabled={resendingId === record.id}

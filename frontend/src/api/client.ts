@@ -261,8 +261,11 @@ export const apiClient = {
     return `${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/eml`;
   },
 
-  async sendSavedDelivery(deliveryId: string): Promise<DeliveryRecord> {
-    const res = await fetchWithTimeout(`${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/send`, { method: 'POST' });
+  async sendSavedDelivery(deliveryId: string, force: boolean = true): Promise<DeliveryRecord> {
+    const url = force
+      ? `${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/send?force=true`
+      : `${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/send`;
+    const res = await fetchWithTimeout(url, { method: 'POST' });
     if (!res.ok) throw new Error(await readErrorDetail(res, 'Could not send saved email'));
     return res.json();
   },
