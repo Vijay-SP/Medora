@@ -41,15 +41,17 @@ def cosine_distance_matrix(embeddings: np.ndarray) -> np.ndarray:
     return np.clip(dist, 0.0, 2.0)
 
 
-def agglomerative_cosine(embeddings: np.ndarray, distance_threshold: float) -> np.ndarray:
+def agglomerative_cosine(
+    embeddings: np.ndarray,
+    distance_threshold: float,
+    max_clusters: Optional[int] = None,
+) -> np.ndarray:
     """
     Average-linkage agglomerative clustering with a cosine-distance stopping rule.
 
     Starts with one cluster per row and repeatedly merges the closest pair (Lance-Williams average-linkage
-    update of the distance matrix) until the closest pair is farther apart than distance_threshold. The pair
-    search is a row-major argmin over the upper triangle, so equal distances always merge the lexicographically
-    smallest (i, j) first and the result is reproducible. Returns int labels of shape (n,), contiguous from 0
-    and numbered by first appearance in row order. An empty matrix yields an empty label array.
+    update of the distance matrix) until the closest pair is farther apart than distance_threshold (or
+    active cluster count falls to max_clusters).
     """
     matrix = np.asarray(embeddings)
     n = matrix.shape[0] if matrix.ndim == 2 else 0
@@ -60,7 +62,6 @@ def agglomerative_cosine(embeddings: np.ndarray, distance_threshold: float) -> n
 
     dist = cosine_distance_matrix(matrix)
     sizes = np.ones(n, dtype=np.float64)
-    # Each row's current cluster: parents[j] == i means row j was absorbed by cluster i
     owner = np.arange(n)
     active = np.ones(n, dtype=bool)
     upper = np.triu(np.ones((n, n), dtype=bool), k=1)
@@ -69,8 +70,12 @@ def agglomerative_cosine(embeddings: np.ndarray, distance_threshold: float) -> n
     while True:
         flat = int(np.argmin(work))
         i, j = divmod(flat, n)
-        if not np.isfinite(work[i, j]) or work[i, j] > distance_threshold:
+        if not np.isfinite(work[i, j]):
             break
+        num_active = int(np.count_nonzero(active))
+        if work[i, j] > distance_threshold:
+            if max_clusters is None or num_active <= max_clusters:
+                break
         # Merge j into i (i < j by construction of the upper triangle)
         ni, nj = sizes[i], sizes[j]
         merged = (ni * dist[i, :] + nj * dist[j, :]) / (ni + nj)
@@ -96,6 +101,18 @@ def agglomerative_cosine(embeddings: np.ndarray, distance_threshold: float) -> n
             mapping[root] = len(mapping)
         labels[idx] = mapping[root]
     return labels
+
+
+def assign_nearest_cluster(embeddings: np.ndarray, centroids: np.ndarray) -> np.ndarray:
+    """Assigns each embedding row to the closest centroid by cosine similarity."""
+    matrix = np.asarray(embeddings)
+    cents = np.asarray(centroids)
+    if matrix.size == 0 or cents.size == 0:
+        return np.zeros((0,), dtype=np.int64)
+    unit_m = _unit_rows(matrix)
+    unit_c = _unit_rows(cents)
+    sims = unit_m @ unit_c.T
+    return np.argmax(sims, axis=1)
 
 
 def two_means_split(embeddings: np.ndarray) -> tuple[np.ndarray, float]:

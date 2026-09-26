@@ -14,9 +14,28 @@ import threading
 from typing import Any, Optional
 
 from app.core.exceptions import ASREngineError
-from app.models.transcript import TranscriptSegment
+from app.models.transcript import Correction, TranscriptSegment
 from app.services.asr.base import BaseASREngine
 from app.services.asr.glossary import MEDPARK_MEDICAL_VOCABULARY, build_code_switch_prompt
+from app.services.asr.lexicon import correct_segment
+from app.services.asr.text_lid import detect_text_language
+
+
+def _dtw_preset_for_model(model_name: str) -> Optional[str]:
+    lower = model_name.lower()
+    if "turbo" in lower:
+        return "large.v3.turbo"
+    if "large" in lower:
+        return "large.v3"
+    if "medium" in lower:
+        return "medium"
+    if "small" in lower:
+        return "small"
+    if "base" in lower:
+        return "base"
+    if "tiny" in lower:
+        return "tiny"
+    return None
 
 
 CRITICAL_REVIEW_TERM_PATTERNS = tuple(
@@ -150,6 +169,7 @@ class WhisperCppEngine(BaseASREngine):
             prompt,
             "--max-context",
             "0",
+            "--no-fallback",
             "--vad",
             "--vad-model",
             str(self.vad_model_path),
@@ -158,6 +178,9 @@ class WhisperCppEngine(BaseASREngine):
             str(output_base),
             "--no-prints",
         ]
+        dtw_preset = _dtw_preset_for_model(self.model_path.name)
+        if dtw_preset:
+            command.extend(["--dtw", dtw_preset])
         if not self.use_gpu:
             command.append("--no-gpu")
         return command
@@ -212,7 +235,25 @@ class WhisperCppEngine(BaseASREngine):
                 raise ASREngineError(f"Local whisper.cpp segment {index} has out-of-order timestamps")
             previous_start = start
             confidence, average_log_probability = self._confidence(item.get("tokens"), index)
-            is_flagged, flag_reason = self._check_review_flags(text, average_log_probability)
+
+            # Multilingual script & language verification (prevents transliterated Romanian or mistranslations)
+            text_lid = detect_text_language(text)
+            seg_language = language
+            lang_source = "acoustic"
+            lang_conf = 1.0 if seg_language != "und" else 0.0
+            if text_lid.is_concrete and text_lid.confidence >= 0.70 and text_lid.language != language:
+                seg_language = text_lid.language
+                lang_source = "text"
+                lang_conf = text_lid.confidence
+
+            # Clinical lexicon post-processing (recovers near-miss proper nouns & abbreviations)
+            cleaned_text, raw_corrections = correct_segment(text, seg_language)
+            corrections = [
+                Correction(was=c["was"], now=c["now"], score=c["score"])
+                for c in raw_corrections
+            ]
+
+            is_flagged, flag_reason = self._check_review_flags(cleaned_text, average_log_probability)
             if average_log_probability is None:
                 is_flagged = True
                 flag_reason = "ASR confidence unavailable"
@@ -221,9 +262,13 @@ class WhisperCppEngine(BaseASREngine):
                     start=round(start, 3),
                     end=round(end, 3),
                     speaker="Speaker 1",
-                    raw_text=text,
-                    language=language,
+                    raw_text=cleaned_text,
+                    language=seg_language,
                     confidence=round(confidence, 2),
+                    language_confidence=round(lang_conf, 2),
+                    language_source=lang_source,
+                    corrections=corrections,
+                    asr_avg_logprob=average_log_probability,
                     is_flagged=is_flagged,
                     flag_reason=flag_reason,
                 )

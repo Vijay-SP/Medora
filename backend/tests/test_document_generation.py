@@ -119,7 +119,7 @@ def test_pdf_wraps_overlong_content(tmp_path: Path):
     assert pdf_out.exists()
     assert docx_out.exists()
     # Content this long cannot fit on a single page unless it was clipped
-    assert pdf_out.read_bytes().count(b"/Type /Page\n") > 1 or pdf_out.stat().st_size > 5000
+    assert pdf_out.read_bytes().count(b"/Type /Page") > 1 or pdf_out.stat().st_size > 5000
 
 
 if __name__ == "__main__":

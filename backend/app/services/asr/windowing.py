@@ -17,20 +17,16 @@ import numpy as np
 
 SAMPLE_RATE = 16000
 
-try:
-    from faster_whisper.vad import VadOptions, get_speech_timestamps
-    VAD_OPTIONS = VadOptions(
-        threshold=0.5,
-        neg_threshold=0.35,
-        min_speech_duration_ms=250,
-        max_speech_duration_s=20.0,
-        min_silence_duration_ms=400,
-        speech_pad_ms=200,
-    )
-except ImportError:
-    VadOptions = None
-    get_speech_timestamps = None
-    VAD_OPTIONS = None
+from app.services.audio.silero_vad import VadOptions, get_speech_timestamps
+
+VAD_OPTIONS = VadOptions(
+    threshold=0.5,
+    neg_threshold=0.35,
+    min_speech_duration_ms=250,
+    max_speech_duration_s=20.0,
+    min_silence_duration_ms=400,
+    speech_pad_ms=200,
+)
 
 # A silence this long between two VAD regions closes the current window even below the target length:
 # a window is decoded as one contiguous slice, so long internal silences only feed the hallucination
@@ -62,8 +58,6 @@ def speech_regions(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, vad_option
     """Silero VAD speech regions as (start_s, end_s), clipped to the audio length."""
     if audio.size == 0:
         return []
-    if get_speech_timestamps is None:
-        raise RuntimeError("faster_whisper is not installed. Use whisper_cpp or remote ASR provider.")
     opts = vad_options or VAD_OPTIONS
     chunks = get_speech_timestamps(audio, opts, sampling_rate=sample_rate)
     total = audio.shape[0] / sample_rate

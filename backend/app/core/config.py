@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # whisper.cpp ASR Configuration (local Metal on Apple Silicon / CPU)
     WHISPER_CPP_BINARY: Path = Path("/opt/homebrew/bin/whisper-cli")
-    WHISPER_CPP_MODEL: Path = Path("data/models/whisper.cpp/ggml-large-v3-turbo.bin")
+    WHISPER_CPP_MODEL: Path = Path("data/models/whisper.cpp/ggml-large-v3-q5_0.bin")
     WHISPER_CPP_VAD_MODEL: Path = Path("data/models/whisper.cpp/ggml-silero-v6.2.0.bin")
     WHISPER_CPP_THREADS: int = 4
     WHISPER_CPP_USE_GPU: bool = True
@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     VOICEPRINTS_DIR: Path = DATA_DIR / "voiceprints"
     SPEAKER_EMBEDDER_MODEL_PATH: Path = MODELS_DIR / "speaker" / "campplus" / "voxceleb_CAM++_LM.onnx"
     SPEAKER_CLUSTER_DISTANCE: float = 0.45  # Average-linkage cosine-distance stop; measured on real far-field audio
+    SPEAKER_MAX_CLUSTERS: int = 5  # Max speaker clusters cap for 5-person meetings
     SPEAKER_WINDOW_MAX_S: float = 8.0  # VAD speech regions are cut into windows of at most this many seconds
     SPEAKER_MATCH_MIN_SCORE: float = 0.50  # Below this no name is offered at all
     SPEAKER_MATCH_MIN_MARGIN: float = 0.08  # top1 - top2 must exceed this before a suggestion is made

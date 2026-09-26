@@ -87,6 +87,15 @@ def _fuzzy_match(token: str, language: Optional[str]) -> Optional[tuple[LexiconE
     return best
 
 
+def _has_glued_digits(text: str, start: int, end: int) -> bool:
+    left = text.rfind(" ", 0, start)
+    left = 0 if left == -1 else left + 1
+    right = text.find(" ", end)
+    right = len(text) if right == -1 else right
+    token = text[left:right]
+    return any(c.isdigit() for c in token)
+
+
 def correct_segment(text: str, language: Optional[str]) -> tuple[str, list[dict]]:
     """
     Applies the lexicon to one segment's text.
@@ -107,7 +116,7 @@ def correct_segment(text: str, language: Optional[str]) -> tuple[str, list[dict]
 
         def _replace(match: re.Match, entry=entry) -> str:
             was = match.group(0)
-            if was == entry.canonical:
+            if was == entry.canonical or _has_glued_digits(result, match.start(), match.end()):
                 return was
             corrections.append({"was": was, "now": entry.canonical, "score": 1.0})
             return entry.canonical
@@ -117,6 +126,8 @@ def correct_segment(text: str, language: Optional[str]) -> tuple[str, list[dict]
     if _fuzzy_entries:
         def _fuzzy_replace(match: re.Match) -> str:
             token = match.group(0)
+            if _has_glued_digits(result, match.start(), match.end()):
+                return token
             hit = _fuzzy_match(token, language)
             if hit is None:
                 return token

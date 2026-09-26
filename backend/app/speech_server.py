@@ -27,7 +27,7 @@ class SpeechSettings(BaseModel):
     max_upload_bytes: int = 500_000_000
     api_key: str | None = None
     binary_path: Path = Path("/opt/homebrew/bin/whisper-cli")
-    model_path: Path = Path("data/models/whisper.cpp/ggml-large-v3-turbo.bin")
+    model_path: Path = Path("data/models/whisper.cpp/ggml-large-v3-q5_0.bin")
     vad_model_path: Path = Path("data/models/whisper.cpp/ggml-silero-v6.2.0.bin")
     threads: int = 4
     use_gpu: bool = True
@@ -252,17 +252,18 @@ def create_app(config: SpeechSettings, engine: Any = None) -> FastAPI:
 
 
 def get_default_settings() -> SpeechSettings:
+    from app.core.config import settings
     base_dir = Path(__file__).resolve().parent.parent.parent
     return SpeechSettings(
         data_dir=Path(os.environ.get("SPEECH_DATA_DIR", str(base_dir / "data" / "speech"))),
         max_pending_jobs=int(os.environ.get("SPEECH_MAX_PENDING_JOBS", 10)),
         max_upload_bytes=int(os.environ.get("SPEECH_MAX_UPLOAD_BYTES", 500_000_000)),
         api_key=os.environ.get("SPEECH_API_KEY") or None,
-        binary_path=Path(os.environ.get("WHISPER_CPP_BINARY", "/opt/homebrew/bin/whisper-cli")),
-        model_path=Path(os.environ.get("WHISPER_CPP_MODEL", str(base_dir / "data" / "models" / "whisper.cpp" / "ggml-large-v3-turbo.bin"))),
-        vad_model_path=Path(os.environ.get("WHISPER_CPP_VAD_MODEL", str(base_dir / "data" / "models" / "whisper.cpp" / "ggml-silero-v6.2.0.bin"))),
-        threads=int(os.environ.get("WHISPER_CPP_THREADS", 4)),
-        use_gpu=os.environ.get("WHISPER_CPP_USE_GPU", "true").lower() in ("true", "1"),
+        binary_path=Path(os.environ.get("WHISPER_CPP_BINARY", str(settings.WHISPER_CPP_BINARY))),
+        model_path=Path(os.environ.get("WHISPER_CPP_MODEL", str(settings.WHISPER_CPP_MODEL))),
+        vad_model_path=Path(os.environ.get("WHISPER_CPP_VAD_MODEL", str(settings.WHISPER_CPP_VAD_MODEL))),
+        threads=int(os.environ.get("WHISPER_CPP_THREADS", settings.WHISPER_CPP_THREADS)),
+        use_gpu=os.environ.get("WHISPER_CPP_USE_GPU", str(settings.WHISPER_CPP_USE_GPU)).lower() in ("true", "1"),
     )
 
 

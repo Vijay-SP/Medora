@@ -40,7 +40,12 @@ from app.models.meeting import Attendee
 from app.models.person import Person
 from app.models.transcript import SpeakerSuggestion, TranscriptSegment
 from app.services.diarization.base import BaseDiarizationEngine
-from app.services.diarization.clustering import ClusterDiagnostics, agglomerative_cosine, diagnose_clusters
+from app.services.diarization.clustering import (
+    ClusterDiagnostics,
+    agglomerative_cosine,
+    assign_nearest_cluster,
+    diagnose_clusters,
+)
 from app.services.diarization.embedder import EXPECTED_SAMPLE_RATE, MIN_SECONDS, speaker_embedder
 from app.services.diarization.matching import merge_suggestions, pick_suggestion, score_clusters
 from app.storage.file_manager import file_manager
@@ -84,8 +89,7 @@ def detect_speech_regions(
     min_silence_ms: int = VAD_MIN_SILENCE_MS,
     speech_pad_ms: int = VAD_SPEECH_PAD_MS,
 ) -> list[tuple[float, float]]:
-    """Silero VAD speech regions as (start_s, end_s), chronological and non-overlapping."""
-    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    from app.services.audio.silero_vad import VadOptions, get_speech_timestamps
 
     wav = np.asarray(wav16k, dtype=np.float32).reshape(-1)
     if len(wav) == 0:
@@ -230,8 +234,37 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
             f"{len(windows)} windows <= {settings.SPEAKER_WINDOW_MAX_S:.0f} s"
         )
 
+        max_clusters = getattr(settings, "SPEAKER_MAX_CLUSTERS", 5)
+        if attendees:
+            max_clusters = max(2, min(max_clusters, len(attendees) + 1))
+
         window_embeddings = speaker_embedder.embed_batch([slice_wav(wav, s, e) for _, s, e in windows])
-        labels = agglomerative_cosine(window_embeddings, settings.SPEAKER_CLUSTER_DISTANCE)
+
+        # Two-phase clustering: anchor turns (>= 1.2s) vs micro-turns (< 1.2s)
+        anchor_mask = w_duration >= 1.2
+        if np.count_nonzero(anchor_mask) >= 3 and np.count_nonzero(~anchor_mask) > 0:
+            anchor_indices = np.flatnonzero(anchor_mask)
+            anchor_labels = agglomerative_cosine(
+                window_embeddings[anchor_indices],
+                settings.SPEAKER_CLUSTER_DISTANCE,
+                max_clusters=max_clusters,
+            )
+            n_anchor_clusters = int(anchor_labels.max()) + 1
+            centroids = np.zeros((n_anchor_clusters, window_embeddings.shape[1]), dtype=np.float32)
+            for c in range(n_anchor_clusters):
+                c_embs = window_embeddings[anchor_indices[anchor_labels == c]]
+                centroids[c] = c_embs.mean(axis=0)
+
+            labels = np.empty(len(windows), dtype=np.int64)
+            labels[anchor_indices] = anchor_labels
+            micro_indices = np.flatnonzero(~anchor_mask)
+            labels[micro_indices] = assign_nearest_cluster(window_embeddings[micro_indices], centroids)
+        else:
+            labels = agglomerative_cosine(
+                window_embeddings,
+                settings.SPEAKER_CLUSTER_DISTANCE,
+                max_clusters=max_clusters,
+            )
         diagnostics = diagnose_clusters(window_embeddings, labels, w_duration, w_region)
 
         # --- segment labelling by largest speech-time overlap, numbered by first appearance
