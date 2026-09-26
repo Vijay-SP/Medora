@@ -237,6 +237,16 @@ export const apiClient = {
     return `${API_BASE}/deliveries/${deliveryId}/attachment/pdf`;
   },
 
+  getDeliveryEmlUrl(deliveryId: string): string {
+    return `${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/eml`;
+  },
+
+  async sendSavedDelivery(deliveryId: string): Promise<DeliveryRecord> {
+    const res = await fetchWithTimeout(`${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/send`, { method: 'POST' });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Could not send saved email'));
+    return res.json();
+  },
+
   getDeliveryDocxUrl(deliveryId: string): string {
     return `${API_BASE}/deliveries/${deliveryId}/attachment/docx`;
   },

@@ -62,6 +62,7 @@ interface SessionWorkspaceViewProps {
   onCopyFullMoM: () => void;
   onDeleteMeeting: (meeting: Meeting) => void;
   onOpenApproval: () => void;
+  onOpenOutbox: () => void;
   onOpenIntake: () => void;
   isEditingSummary: boolean;
   setIsEditingSummary: (v: boolean) => void;
@@ -112,6 +113,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   onCopyFullMoM,
   onDeleteMeeting,
   onOpenApproval,
+  onOpenOutbox,
   onOpenIntake,
   isEditingSummary,
   setIsEditingSummary,
@@ -417,7 +419,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
               {selectedMeeting.workflow_mode === 'auto_pilot' ? (
                 <>
                   <Rocket className="w-3.5 h-3.5" aria-hidden="true" />
-                  <span>Auto-Pilot (Zero-Click)</span>
+                  <span>Auto-Pilot Processing</span>
                 </>
               ) : (
                 <>
@@ -481,6 +483,9 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-col gap-2 lg:items-end flex-shrink-0">
           <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <button onClick={onOpenOutbox} className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl focus-visible:ring-2 focus-visible:ring-medpark-500">
+              Email Outbox
+            </button>
             {minutes && (
               <button
                 onClick={onCopyFullMoM}

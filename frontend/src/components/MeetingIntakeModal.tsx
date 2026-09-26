@@ -260,7 +260,7 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
                   }`}
                 >
                   <Rocket className="w-3.5 h-3.5 text-medpark-600" aria-hidden="true" />
-                  <span>Auto-Pilot (Zero-Click)</span>
+                  <span>Auto-Pilot Processing</span>
                 </button>
 
                 <button
@@ -278,11 +278,11 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
                 </button>
               </div>
 
-              {/* Auto-pilot skips the human gate entirely: say so before it is chosen */}
+              {/* Both modes require human sign-off before email. */}
               {workflowMode === 'auto_pilot' ? (
                 <p className="text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2 flex items-start space-x-1.5">
                   <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />
-                  <span>Minutes will be emailed to the {attendees.length} listed participants with no review step.</span>
+                  <span>Processing runs automatically. Minutes wait for your sign-off before any email is sent.</span>
                 </p>
               ) : (
                 <p className="text-[11px] text-slate-500">

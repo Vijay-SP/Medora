@@ -12,7 +12,8 @@ from app.models.meeting import Meeting
 from app.models.extraction import MinutesOfMeeting
 from app.models.delivery import DeliveryRecord, DeliveryStatus, DeliveryChannel
 from app.services.delivery.router import delivery_router
-from app.services.delivery.smtp_service import assert_no_person_names, build_body
+from app.services.delivery.smtp_service import assert_no_person_names, build_body, get_email_languages
+from app.storage.repository import repository
 
 
 class N8nAutomationService:
@@ -56,6 +57,10 @@ class N8nAutomationService:
             record.error_message = guard.message
             return record
         record.subject = subject
+        record.created_at = datetime.now(timezone.utc)
+        record.body_text = body_text
+        record.languages_included = get_email_languages(meeting)
+        record.to_recipients, record.cc_recipients = delivery_router.split_to_cc(meeting, recipients)
 
         payload = {
             "event": "meeting.approved",
@@ -66,12 +71,14 @@ class N8nAutomationService:
             "recipients": recipients,
             "subject": subject,
             "body_text": body_text,
+            "languages_included": record.languages_included,
             "decisions_count": len(minutes.decisions),
             "actions_count": len(minutes.action_items)
         }
 
         try:
             logger.info(f"Triggering n8n webhook at {settings.N8N_WEBHOOK_URL}...")
+            repository.save_delivery(record)
             async with httpx.AsyncClient(timeout=10.0) as client:
                 res = await client.post(settings.N8N_WEBHOOK_URL, json=payload)
                 if res.status_code in [200, 201]:

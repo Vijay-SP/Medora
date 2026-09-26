@@ -48,6 +48,7 @@ interface SidebarProps {
   selectedMeeting: Meeting | null;
   totalMeetingsCount: number;
   pendingReviewsCount: number;
+  failedDeliveriesCount?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   voiceIdEnabled?: boolean;
@@ -61,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   selectedMeeting,
   totalMeetingsCount,
   pendingReviewsCount,
+  failedDeliveriesCount,
   isCollapsed,
   onToggleCollapse,
   voiceIdEnabled = false,
@@ -104,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'deliveries',
           label: 'Email Deliveries',
           icon: MailCheck,
-          badge: pendingReviewsCount > 0 ? `${pendingReviewsCount} pending` : undefined,
-          badgeColor: 'bg-amber-100 text-amber-800 font-semibold',
+          badge: failedDeliveriesCount && failedDeliveriesCount > 0 ? `${failedDeliveriesCount} failed` : undefined,
+          badgeColor: 'bg-rose-100 text-rose-800 font-semibold',
         },
         {
           id: 'settings',

@@ -13,7 +13,6 @@ from app.core.logging import logger
 from app.models.meeting import Meeting, ProcessingStatus, ReviewStatus, WorkflowMode
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.extraction import MinutesOfMeeting
-from app.models.delivery import DeliveryStatus
 from app.storage.repository import repository
 from app.storage.file_manager import file_manager
 from app.services.audio.preprocessor import audio_preprocessor
@@ -21,8 +20,6 @@ from app.services.asr import get_asr_engine
 from app.services.diarization.speaker_engine import diarization_engine
 from app.services.extraction.llm_engine import extraction_engine
 from app.services.documents.generator import document_generator
-from app.services.delivery.smtp_service import smtp_service
-from app.services.delivery.n8n_service import n8n_service
 from app.services.delivery.router import delivery_router
 
 # Statuses that mean a run is still in flight. Derived from the terminal states instead of being
@@ -276,7 +273,7 @@ class PipelineOrchestrator:
 
             # Stage 6: Delivery Routing Evaluation
             if meeting.workflow_mode == WorkflowMode.AUTO_PILOT:
-                logger.info("Auto-Pilot Mode active: Proceeding to automatic approval & email dispatch...")
+                logger.info("Auto-Pilot processing complete: human sign-off is required before email dispatch.")
                 # A degraded draft is never auto-approved: the documents exist, so the run completes,
                 # but the meeting is held for a human exactly like a supervised run.
                 try:
@@ -287,27 +284,10 @@ class PipelineOrchestrator:
                     meeting.current_stage_detail = "Document DRAFT degradat reținut pentru revizuire umană. Expedierea automată a fost blocată."
                     logger.warning(f"Auto-Pilot dispatch blocked for meeting {meeting_id}: {guard.message}")
                 else:
-                    meeting.review_status = ReviewStatus.APPROVED
-                    meeting.approved_by = "Auto-Pilot Pipeline"
-                    meeting.current_stage_detail = "Trimitere email către lista de distribuție..."
-
-                    # Single authorized recipient resolution shared by both delivery channels
-                    recipients = delivery_router.resolve_recipients(meeting)
-
-                    # Exclusive delivery routing: n8n or direct SMTP
-                    if settings.DELIVERY_CHANNEL == "n8n" and settings.N8N_ENABLED:
-                        logger.info("Routing via n8n automation engine...")
-                        delivery_record = await n8n_service.trigger_workflow(meeting, minutes, recipients)
-                    else:
-                        delivery_record = await smtp_service.deliver(meeting, minutes, pdf_path, docx_path, recipients)
-
-                    repository.save_delivery(delivery_record)
-                    if delivery_record.status == DeliveryStatus.DISPATCHED:
-                        meeting.review_status = ReviewStatus.DELIVERED
-                    else:
-                        meeting.review_status = ReviewStatus.APPROVED
-                        meeting.error_message = delivery_record.error_message
-                        logger.warning(f"Delivery not completed: {delivery_record.status} ({delivery_record.error_message})")
+                    meeting.review_status = ReviewStatus.PENDING_REVIEW
+                    meeting.approved_by = None
+                    meeting.approved_at = None
+                    meeting.current_stage_detail = "Document pregătit. Aprobarea umană este obligatorie înainte de email."
             else:
                 logger.info("Supervised Mode active: Holding document for clinical reviewer sign-off.")
                 meeting.review_status = ReviewStatus.PENDING_REVIEW

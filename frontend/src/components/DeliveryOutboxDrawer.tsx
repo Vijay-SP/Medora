@@ -1,22 +1,42 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { DeliveryRecord } from '../types';
+import { DeliveryRecord, deduplicateDeliveries } from '../types';
 import { apiClient } from '../api/client';
+import { EmailPreview } from './EmailPreview';
 import { Mail, CheckCircle2, Clock, AlertTriangle, FileDown, X, RefreshCw } from 'lucide-react';
 
 interface DeliveryOutboxDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   activeMeetingId?: string;
+  onDeliveryChanged?: () => void;
 }
 
 export const DeliveryOutboxDrawer: React.FC<DeliveryOutboxDrawerProps> = ({
   isOpen,
   onClose,
   activeMeetingId,
+  onDeliveryChanged,
 }) => {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+
+  const handleResend = async (deliveryId: string) => {
+    if (resendingId) return;
+    setResendingId(deliveryId);
+    try {
+      await apiClient.sendSavedDelivery(deliveryId);
+      await loadDeliveries();
+      onDeliveryChanged?.();
+    } catch (err) {
+      console.error('Failed to resend delivery:', err);
+      await loadDeliveries();
+      onDeliveryChanged?.();
+    } finally {
+      setResendingId(null);
+    }
+  };
   const [hasEntered, setHasEntered] = useState(false);
 
   // Guards against a late response for a previously selected meeting overwriting the list.
@@ -83,7 +103,7 @@ export const DeliveryOutboxDrawer: React.FC<DeliveryOutboxDrawerProps> = ({
     try {
       const records = await apiClient.listDeliveries(requestedId);
       if (requestedMeetingIdRef.current !== requestedId) return;
-      setDeliveries(records);
+      setDeliveries(deduplicateDeliveries(records));
     } catch (err: any) {
       console.error('Failed to load deliveries:', err);
       if (requestedMeetingIdRef.current !== requestedId) return;
@@ -101,6 +121,8 @@ export const DeliveryOutboxDrawer: React.FC<DeliveryOutboxDrawerProps> = ({
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'saved_locally':
+        return <span className="text-xs font-bold px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">Saved locally · Not sent</span>;
       case 'dispatched':
         return (
           <span className="inline-flex items-center space-x-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-medium">
@@ -258,6 +280,19 @@ export const DeliveryOutboxDrawer: React.FC<DeliveryOutboxDrawerProps> = ({
                 </div>
               )}
 
+              <div className="flex flex-wrap items-center gap-2">
+                <EmailPreview record={rec} onSent={() => { void loadDeliveries(); onDeliveryChanged?.(); }} />
+                {['saved_locally', 'failed', 'simulated'].includes(rec.status) && (
+                  <button
+                    onClick={() => handleResend(rec.id)}
+                    disabled={resendingId === rec.id}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-bold rounded-lg bg-medpark-600 hover:bg-medpark-700 text-white shadow-xs transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${resendingId === rec.id ? 'motion-safe:animate-spin' : ''}`} />
+                    <span>{resendingId === rec.id ? 'Sending...' : 'Resend Email'}</span>
+                  </button>
+                )}
+              </div>
               {/* Attachments: delivery-scoped so the exact dispatched revision is served */}
               <div className="flex items-center space-x-2 pt-1 border-t border-slate-100">
                 <a

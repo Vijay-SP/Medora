@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Meeting, Transcript, MinutesOfMeeting, MeetingCreate, ReadinessResponse } from './types';
+import { Meeting, Transcript, MinutesOfMeeting, MeetingCreate, ReadinessResponse, DeliveryRecord, deduplicateDeliveries } from './types';
 import { apiClient } from './api/client';
 import { useToast } from './components/Toast';
 import { Navbar } from './components/Navbar';
@@ -118,6 +118,16 @@ export const App: React.FC = () => {
   const [stageDetail, setStageDetail] = useState<string>('');
   const [pipelineStage, setPipelineStage] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
+
+  const loadDeliveries = async () => {
+    try {
+      const data = await apiClient.listDeliveries();
+      setDeliveries(deduplicateDeliveries(data));
+    } catch (err) {
+      console.error('Failed to load deliveries:', err);
+    }
+  };
 
   const waveformRef = useRef<WaveformPlayerRef>(null);
   const selectedMeetingIdRef = useRef<string | null>(selectedMeetingId);
@@ -132,6 +142,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     loadMeetings();
+    loadDeliveries();
   }, []);
 
   useEffect(() => {
@@ -181,6 +192,7 @@ export const App: React.FC = () => {
   // Global Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || document.querySelector('[data-email-preview]')) return;
       if (isIntakeOpen || isApprovalOpen || isOutboxOpen || isShortcutsOpen || meetingToDelete) {
         if (e.key === 'Escape') {
           e.preventDefault();
@@ -457,6 +469,7 @@ export const App: React.FC = () => {
 
       await loadMeetingData(selectedMeetingId);
       await loadMeetings();
+      await loadDeliveries();
 
       const delivery = result?.delivery_record || null;
       if (delivery?.status === 'dispatched') {
@@ -464,6 +477,8 @@ export const App: React.FC = () => {
           'Minutes Dispatched',
           `Signed minutes emailed to ${delivery.recipients?.length || 0} recipient(s).`
         );
+      } else if (delivery?.status === 'saved_locally') {
+        showToast('Signed and Saved Locally', 'Email is ready in the outbox. No email has been sent.');
       } else if (delivery?.status === 'simulated') {
         showToast(
           'Minutes Signed (Simulated Outbox)',
@@ -480,6 +495,12 @@ export const App: React.FC = () => {
       showToast('Sign-off failed', err?.message || 'Server error', 'error');
       throw err;
     }
+  };
+
+  const refreshDeliveryState = () => {
+    void loadMeetings();
+    void loadDeliveries();
+    if (selectedMeetingId) void loadMeetingData(selectedMeetingId);
   };
 
   const handleSeekAudio = (time: number) => {
@@ -567,9 +588,10 @@ export const App: React.FC = () => {
   const pendingCount = meetings.filter(
     (m) =>
       m.review_status === 'pending_review' ||
-      m.review_status === 'draft' ||
-      m.review_status === 'approved'
+      m.review_status === 'draft'
+
   ).length;
+  const failedDeliveriesCount = deliveries.filter((d) => d.status === 'failed').length;
 
   const getPageTitle = (page: AppPage): string => {
     if (view === 'people') return 'People & Voices (Speaker Enrolment & Consent)';
@@ -625,6 +647,7 @@ export const App: React.FC = () => {
         selectedMeeting={selectedMeeting}
         totalMeetingsCount={meetings.length}
         pendingReviewsCount={pendingCount}
+        failedDeliveriesCount={failedDeliveriesCount}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
         voiceIdEnabled={voiceIdEnabled}
@@ -775,6 +798,7 @@ export const App: React.FC = () => {
               onCopyFullMoM={handleCopyFullMoM}
               onDeleteMeeting={(m) => setMeetingToDelete(m)}
               onOpenApproval={() => setIsApprovalOpen(true)}
+              onOpenOutbox={() => setIsOutboxOpen(true)}
               onOpenIntake={() => {
                 setIntakeInitialMode('upload');
                 setIsIntakeOpen(true);
@@ -807,7 +831,7 @@ export const App: React.FC = () => {
           )}
 
           {/* Page 4: Deliveries & Outbox */}
-          {view === 'workspace' && currentPage === 'deliveries' && <DeliveriesView />}
+          {view === 'workspace' && currentPage === 'deliveries' && <DeliveriesView onDeliveryChanged={refreshDeliveryState} />}
 
           {/* Page 5: System & Settings */}
           {view === 'workspace' && currentPage === 'settings' && <SettingsView />}
@@ -894,6 +918,7 @@ export const App: React.FC = () => {
         isOpen={isOutboxOpen}
         onClose={() => setIsOutboxOpen(false)}
         activeMeetingId={selectedMeetingId || undefined}
+        onDeliveryChanged={refreshDeliveryState}
       />
 
       {/* Keyboard Shortcuts Modal */}

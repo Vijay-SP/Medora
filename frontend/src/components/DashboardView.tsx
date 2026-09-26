@@ -50,7 +50,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   const totalCount = meetings.length;
   const pendingCount = meetings.filter(
-    (m) => m.review_status === 'pending_review' || m.review_status === 'draft' || m.review_status === 'approved'
+    (m) => m.review_status === 'pending_review' || m.review_status === 'draft'
   ).length;
   const deliveredCount = meetings.filter((m) => m.review_status === 'delivered').length;
 

@@ -11,21 +11,58 @@ import {
   Send,
   ExternalLink,
 } from 'lucide-react';
-import { DeliveryRecord } from '../types';
+import { DeliveryRecord, deduplicateDeliveries } from '../types';
 import { apiClient } from '../api/client';
+import { EmailPreview } from './EmailPreview';
 
-export const DeliveriesView: React.FC = () => {
+export const DeliveriesView: React.FC<{ onDeliveryChanged?: () => void }> = ({ onDeliveryChanged }) => {
   const [deliveries, setDeliveries] = useState<DeliveryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<{ id: string; type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleResend = async (deliveryId: string) => {
+    if (resendingId) return;
+    setResendingId(deliveryId);
+    setActionFeedback(null);
+    try {
+      const updated = await apiClient.sendSavedDelivery(deliveryId);
+      if (updated.status === 'dispatched') {
+        setActionFeedback({
+          id: deliveryId,
+          type: 'success',
+          message: `Email dispatched successfully to ${updated.recipients.length} recipient(s).`,
+        });
+      } else if (updated.status === 'failed') {
+        setActionFeedback({
+          id: deliveryId,
+          type: 'error',
+          message: updated.error_message || 'SMTP transmission failed. Please ensure Mailpit/SMTP is running on 127.0.0.1:1025.',
+        });
+      }
+      await fetchDeliveries();
+      onDeliveryChanged?.();
+    } catch (err: any) {
+      setActionFeedback({
+        id: deliveryId,
+        type: 'error',
+        message: err.message || 'Failed to resend email.',
+      });
+      await fetchDeliveries();
+      onDeliveryChanged?.();
+    } finally {
+      setResendingId(null);
+    }
+  };
 
   const fetchDeliveries = async () => {
     setIsLoading(true);
     setError(null);
     try {
       const data = await apiClient.listDeliveries();
-      setDeliveries(data);
+      setDeliveries(deduplicateDeliveries(data));
     } catch (err: any) {
       console.error('Failed to fetch deliveries:', err);
       setError('Could not retrieve email delivery audit log.');
@@ -50,6 +87,8 @@ export const DeliveriesView: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
+      case 'saved_locally':
+        return <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">Saved locally · Not sent</span>;
       case 'dispatched':
         return (
           <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
@@ -92,7 +131,7 @@ export const DeliveriesView: React.FC = () => {
           </div>
           <h2 className="text-xl font-black text-slate-900">Email Outbox & Governance Audit</h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Immutable audit records of all official minutes dispatched to hospital departments and clinicians.
+            Saved emails and delivery attempts for approved meeting minutes.
           </p>
         </div>
 
@@ -140,7 +179,7 @@ export const DeliveriesView: React.FC = () => {
             <Mail className="w-10 h-10 text-slate-300 mx-auto" />
             <p className="text-sm font-bold text-slate-700">No email records found</p>
             <p className="text-xs text-slate-400">
-              When a clinical reviewer signs off on minutes (or Auto-Pilot is enabled), the delivery audit entries will be recorded here.
+              After a reviewer signs off on minutes, saved emails and delivery attempts appear here.
             </p>
           </div>
         ) : (
@@ -167,7 +206,7 @@ export const DeliveriesView: React.FC = () => {
                       {new Date(record.sent_at).toLocaleString()}
                     </span>
                   ) : (
-                    <span className="italic text-slate-400">Pending transmission</span>
+                    <span className="text-slate-500">{record.created_at ? `Created ${new Date(record.created_at).toLocaleString()} · Not sent` : 'Not sent'}</span>
                   )}
                 </div>
               </div>
@@ -185,6 +224,48 @@ export const DeliveriesView: React.FC = () => {
                 ))}
               </div>
 
+              {/* Failure message if failed */}
+              {record.error_message && record.status === 'failed' && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start space-x-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-0.5">
+                    <span className="font-bold">Transmission Failure:</span>
+                    <p className="font-mono text-[11px] leading-relaxed break-words">{record.error_message}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Action feedback */}
+              {actionFeedback && actionFeedback.id === record.id && (
+                <div className={`p-3 rounded-xl border text-xs flex items-start space-x-2 ${
+                  actionFeedback.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    : 'bg-rose-50 border-rose-200 text-rose-800'
+                }`}>
+                  {actionFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                  )}
+                  <span className="font-medium">{actionFeedback.message}</span>
+                </div>
+              )}
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+                <div className="flex flex-wrap items-center gap-2">
+                  <EmailPreview record={record} onSent={() => { void fetchDeliveries(); onDeliveryChanged?.(); }} />
+                  {['saved_locally', 'failed', 'simulated'].includes(record.status) && (
+                    <button
+                      onClick={() => handleResend(record.id)}
+                      disabled={resendingId === record.id}
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-medpark-600 hover:bg-medpark-700 text-white shadow-xs transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${resendingId === record.id ? 'animate-spin' : ''}`} />
+                      <span>{resendingId === record.id ? 'Sending...' : 'Resend Email'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
               {/* Attachments & Artifacts */}
               <div className="flex items-center justify-between pt-1">
                 <div className="flex items-center space-x-2 text-xs">
