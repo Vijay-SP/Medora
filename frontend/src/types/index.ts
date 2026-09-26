@@ -22,6 +22,7 @@ export interface Attendee {
   email: string;
   department?: string;
   person_id?: string;
+  primary_language?: 'ro' | 'ru' | 'en' | null;
 }
 
 export interface Meeting {
@@ -271,7 +272,16 @@ export interface DeliveryRecord {
   channel: string;
   recipients: string[];
   subject: string;
-  status: 'pending' | 'dispatched' | 'failed' | 'simulated';
+  status: 'pending' | 'dispatched' | 'failed' | 'simulated' | 'saved_locally';
+  body_text?: string | null;
+  languages_included?: string[];
+  from_header?: string | null;
+  to_recipients?: string[];
+  cc_recipients?: string[];
+  created_at?: string | null;
+  eml_available?: boolean;
+  retry_allowed?: boolean;
+  retry_of?: string | null;
   pdf_attachment_path?: string;
   docx_attachment_path?: string;
   sent_at?: string;
@@ -377,6 +387,16 @@ export interface VoiceProfileCreate {
   specialty?: string;
 }
 
+export interface VoiceProfileUpdate {
+  person_name?: string;
+  role?: string;
+  email?: string;
+  department?: string;
+  title?: string;
+  primary_language?: string;
+  specialty?: string;
+}
+
 export type SampleVerdict = 'good' | 'usable' | 'reject';
 
 // Returned by POST /voice-profiles/{id}/samples; `reasons` are shown to the user verbatim.
@@ -469,4 +489,44 @@ export interface SpeakerConfirmRequest {
   expected_revision: number;
   reviewer_name: string;
   reviewer_role?: string;
+}
+
+export function deduplicateDeliveries(records: DeliveryRecord[]): DeliveryRecord[] {
+  const byMeeting = new Map<string, DeliveryRecord[]>();
+  for (const r of records) {
+    const list = byMeeting.get(r.meeting_id) || [];
+    list.push(r);
+    byMeeting.set(r.meeting_id, list);
+  }
+
+  const result: DeliveryRecord[] = [];
+  for (const [, mRecords] of byMeeting.entries()) {
+    const dispatchedRevs = mRecords
+      .filter((r) => r.status === 'dispatched')
+      .map((r) => r.revision);
+    const maxDispatchedRev = dispatchedRevs.length > 0 ? Math.max(...dispatchedRevs) : -1;
+
+    const byRev = new Map<number, DeliveryRecord[]>();
+    for (const r of mRecords) {
+      const list = byRev.get(r.revision) || [];
+      list.push(r);
+      byRev.set(r.revision, list);
+    }
+
+    for (const [rev, revRecords] of byRev.entries()) {
+      const dispatched = revRecords.filter((r) => r.status === 'dispatched');
+      if (dispatched.length > 0) {
+        dispatched.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        result.push(dispatched[0]);
+      } else if (rev < maxDispatchedRev) {
+        continue;
+      } else {
+        revRecords.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        result.push(revRecords[0]);
+      }
+    }
+  }
+
+  result.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+  return result;
 }

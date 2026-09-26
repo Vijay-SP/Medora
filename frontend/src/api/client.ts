@@ -10,6 +10,7 @@ import {
   ReadinessResponse,
   VoiceProfile,
   VoiceProfileCreate,
+  VoiceProfileUpdate,
   SampleQuality,
   VoiceStatus,
   SpeakersResponse,
@@ -256,6 +257,16 @@ export const apiClient = {
     return `${API_BASE}/deliveries/${deliveryId}/attachment/pdf`;
   },
 
+  getDeliveryEmlUrl(deliveryId: string): string {
+    return `${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/eml`;
+  },
+
+  async sendSavedDelivery(deliveryId: string): Promise<DeliveryRecord> {
+    const res = await fetchWithTimeout(`${API_BASE}/deliveries/${encodeURIComponent(deliveryId)}/send`, { method: 'POST' });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Could not send saved email'));
+    return res.json();
+  },
+
   getDeliveryDocxUrl(deliveryId: string): string {
     return `${API_BASE}/deliveries/${deliveryId}/attachment/docx`;
   },
@@ -281,6 +292,16 @@ export const apiClient = {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create voice profile'));
+    return res.json();
+  },
+
+  async updateVoiceProfile(id: string, payload: VoiceProfileUpdate): Promise<VoiceProfile> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update voice profile'));
     return res.json();
   },
 

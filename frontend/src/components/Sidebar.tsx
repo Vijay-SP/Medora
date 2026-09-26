@@ -48,6 +48,7 @@ interface SidebarProps {
   selectedMeeting: Meeting | null;
   totalMeetingsCount: number;
   pendingReviewsCount: number;
+  failedDeliveriesCount?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   voiceIdEnabled?: boolean;
@@ -61,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   selectedMeeting,
   totalMeetingsCount,
   pendingReviewsCount,
+  failedDeliveriesCount,
   isCollapsed,
   onToggleCollapse,
   voiceIdEnabled = false,
@@ -104,8 +106,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'deliveries',
           label: 'Email Deliveries',
           icon: MailCheck,
-          badge: pendingReviewsCount > 0 ? `${pendingReviewsCount} pending` : undefined,
-          badgeColor: 'bg-amber-100 text-amber-800 font-semibold',
+          badge: failedDeliveriesCount && failedDeliveriesCount > 0 ? `${failedDeliveriesCount} failed` : undefined,
+          badgeColor: 'bg-rose-100 text-rose-800 font-semibold',
         },
         {
           id: 'settings',
@@ -125,24 +127,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
     >
       {/* Top Header & Branding */}
       <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
-        <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0">
+        <div className={`h-16 border-b border-slate-200 flex items-center ${isCollapsed ? 'justify-between px-2 sm:px-3' : 'justify-between px-4'} flex-shrink-0`}>
           {!isCollapsed ? (
-            <div className="flex items-center space-x-2 overflow-hidden">
-              <MedoraLogo size="sm" showTagline={false} />
-            </div>
+            <>
+              <div className="flex items-center space-x-2 overflow-hidden">
+                <MedoraLogo size="sm" showTagline={false} />
+              </div>
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                aria-label="Collapse sidebar"
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors flex items-center justify-center flex-shrink-0"
+                title="Collapse sidebar"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            </>
           ) : (
-            <div className="mx-auto">
-              <MedoraLogo size="sm" showTagline={false} />
+            <div className="w-full flex items-center justify-between">
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                title="Expand sidebar"
+                aria-label="Expand sidebar"
+                className="p-1 rounded-xl hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+              >
+                <MedoraLogo size="sm" variant="icon-only" />
+              </button>
+              <button
+                type="button"
+                onClick={onToggleCollapse}
+                aria-label="Expand sidebar"
+                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors flex items-center justify-center flex-shrink-0"
+                title="Expand sidebar"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           )}
-          <button
-            onClick={onToggleCollapse}
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors hidden sm:flex"
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-          </button>
         </div>
 
         {/* Primary Intake Buttons: Two Clear Options */}

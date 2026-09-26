@@ -27,6 +27,7 @@ from app.services.delivery.n8n_service import n8n_service
 from app.core.config import settings
 from app.core.exceptions import DeliveryError
 from app.core.logging import logger
+from app.services.delivery.dispatch_lock import dispatch_lock, record_outcome
 
 router = APIRouter(prefix="/meetings/{meeting_id}", tags=["Review & Approval"])
 
@@ -251,6 +252,11 @@ def update_minutes(meeting_id: str, updated_minutes: MinutesOfMeeting) -> Minute
 
 @router.post("/review/approve", response_model=ApprovalResponse)
 async def approve_and_dispatch(meeting_id: str, payload: ApprovalRequest) -> ApprovalResponse:
+    with dispatch_lock():
+        return await _approve_and_dispatch(meeting_id, payload)
+
+
+async def _approve_and_dispatch(meeting_id: str, payload: ApprovalRequest) -> ApprovalResponse:
     """
     Formal human sign-off gate:
     1. Validates meeting state, prior delivery, and the revision the reviewer signed off
@@ -289,6 +295,16 @@ async def approve_and_dispatch(meeting_id: str, payload: ApprovalRequest) -> App
     except DeliveryError as guard:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=guard.message)
 
+    # Repeated approvals return the already prepared attempt. Retrying delivery is a separate,
+    # explicit action on the saved message, never an incidental effect of signing twice.
+    prior = next((r for r in repository.list_deliveries(meeting_id) if r.revision == minutes.revision), None)
+    if (prior and (prior.eml_available or prior.status in (DeliveryStatus.PENDING, DeliveryStatus.DISPATCHED))
+            and meeting.review_status == ReviewStatus.APPROVED and meeting.approved_at):
+        return ApprovalResponse(
+            meeting_id=meeting.id, status=meeting.review_status, approved_by=meeting.approved_by,
+            approved_at=meeting.approved_at, revision=minutes.revision, delivery_record=prior,
+        )
+
     now = datetime.now(timezone.utc)
     meeting.review_status = ReviewStatus.APPROVED
     meeting.approved_by = f"{payload.reviewer_name} ({payload.reviewer_role})"
@@ -306,18 +322,11 @@ async def approve_and_dispatch(meeting_id: str, payload: ApprovalRequest) -> App
     else:
         delivery_rec = await smtp_service.deliver(meeting, minutes, pdf_path, docx_path, recipients)
 
-    repository.save_delivery(delivery_rec)
-    if delivery_rec.status == DeliveryStatus.DISPATCHED:
-        meeting.review_status = ReviewStatus.DELIVERED
-    else:
-        meeting.review_status = ReviewStatus.APPROVED
-        meeting.error_message = delivery_rec.error_message
-
-    repository.save_meeting(meeting)
+    current = record_outcome(delivery_rec)
 
     return ApprovalResponse(
         meeting_id=meeting.id,
-        status=meeting.review_status,
+        status=current.review_status,
         approved_by=meeting.approved_by,
         approved_at=now,
         revision=minutes.revision,

@@ -14,11 +14,13 @@ from app.core.config import settings
 
 
 class DeliveryChannel(str, Enum):
+    LOCAL_OUTBOX = "local_outbox"
     DIRECT_SMTP = "direct_smtp"
     N8N_WEBHOOK = "n8n_webhook"
 
 
 class DeliveryStatus(str, Enum):
+    SAVED_LOCALLY = "saved_locally"
     PENDING = "pending"
     DISPATCHED = "dispatched"
     FAILED = "failed"
@@ -43,6 +45,17 @@ class DeliveryRecord(BaseModel):
     
     recipients: list[str] = Field(default_factory=list)
     subject: str = ""
+    body_text: Optional[str] = None
+    languages_included: list[str] = Field(default_factory=list)
+    from_header: Optional[str] = None
+    envelope_sender: Optional[str] = None
+    to_recipients: list[str] = Field(default_factory=list)
+    cc_recipients: list[str] = Field(default_factory=list)
+    created_at: Optional[datetime] = None  # Legacy records have no known creation timestamp
+    eml_available: bool = False  # Path is derived from validated meeting/delivery IDs, never supplied by a client
+    eml_sha256: Optional[str] = None
+    retry_allowed: bool = False
+    retry_of: Optional[str] = None
     status: DeliveryStatus = DeliveryStatus.PENDING
     
     pdf_attachment_path: Optional[str] = None
@@ -53,7 +66,7 @@ class DeliveryRecord(BaseModel):
     smtp_response_code: Optional[int] = None
     idempotency_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
 
-    @field_validator("sent_at", mode="before")
+    @field_validator("sent_at", "created_at", mode="before")
     @classmethod
     def validate_sent_at(cls, v: Any) -> Any:
         if v is None:
@@ -74,7 +87,7 @@ DEFAULT_ROUTING_POLICIES: dict[str, RoutingPolicy] = {
         department_name="Consiliul Medical & Șefi Secții",
         default_recipients=["director.medical@medpark.md", "comitet.calitate@medpark.md", "sefi.sectii@medpark.md"],
         cc_recipients=["arhiva.medicala@medpark.md"],
-        subject_prefix="[MEDPARK MEDICAL BOARD]"
+        subject_prefix="[MEDORA]"
     ),
     "executive": RoutingPolicy(
         meeting_type="executive",

@@ -5,7 +5,7 @@ Defines core meeting entities, statuses, attendee metadata, and workflow modes.
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 import uuid
 
@@ -48,7 +48,7 @@ class WorkflowMode(str, Enum):
     """
     Execution Mode:
     - SUPERVISED: Requires human clinical/administrative sign-off before email dispatch.
-    - AUTO_PILOT: Fully automated zero-click pipeline directly to email (challenge evaluation).
+    - AUTO_PILOT: Automated processing; email still requires human sign-off.
     """
     SUPERVISED = "supervised"
     AUTO_PILOT = "auto_pilot"
@@ -70,6 +70,7 @@ class Attendee(BaseModel):
     email: str = Field(..., description="Internal hospital email address")
     department: Optional[str] = Field(None, description="Hospital department, e.g. Cardiology, Surgery")
     person_id: Optional[str] = Field(None, description="Linked registered Person ID if selected from roster")
+    primary_language: Literal["ro", "ru", "en"] | None = None
 
 
 class MeetingBase(BaseModel):

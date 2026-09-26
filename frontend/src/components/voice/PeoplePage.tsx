@@ -13,6 +13,7 @@ import {
   Search,
   Building2,
   Filter,
+  Pencil,
 } from 'lucide-react';
 import { VoiceProfile, VoiceStatus } from '../../types';
 import { apiClient } from '../../api/client';
@@ -506,6 +507,314 @@ const AddPersonDialog: React.FC<AddPersonDialogProps> = ({ onCancel, onCreated }
 };
 
 // ---------------------------------------------------------------------------------------------
+// Edit-person dialog
+// ---------------------------------------------------------------------------------------------
+interface EditPersonDialogProps {
+  profile: VoiceProfile;
+  onCancel: () => void;
+  onUpdated: (profile: VoiceProfile) => void;
+}
+
+const EditPersonDialog: React.FC<EditPersonDialogProps> = ({ profile, onCancel, onUpdated }) => {
+  const isKnownDept = profile.department ? MEDPARK_DEPARTMENTS.includes(profile.department) : false;
+  const [title, setTitle] = useState(profile.title || '');
+  const [name, setName] = useState(profile.person_name || '');
+  const [department, setDepartment] = useState(
+    profile.department
+      ? isKnownDept
+        ? profile.department
+        : 'CUSTOM'
+      : 'Cardiology'
+  );
+  const [customDepartment, setCustomDepartment] = useState(
+    profile.department && !isKnownDept ? profile.department : ''
+  );
+  const [role, setRole] = useState(profile.role || 'Member');
+  const [specialty, setSpecialty] = useState(profile.specialty || '');
+  const [primaryLanguage, setPrimaryLanguage] = useState(profile.primary_language || 'ro');
+  const [email, setEmail] = useState(profile.email || '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const initial = panel?.querySelector<HTMLElement>('[data-autofocus]') || panel;
+    initial?.focus();
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        onCancel();
+        return;
+      }
+      if (e.key !== 'Tab' || !panel) return;
+      const focusables = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
+        e.preventDefault();
+        last.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKey, true);
+    return () => {
+      document.removeEventListener('keydown', handleKey, true);
+      previouslyFocused?.focus?.();
+    };
+  }, [onCancel]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setFormError('Full name is required.');
+      return;
+    }
+    const resolvedDept = department === 'CUSTOM' ? customDepartment.trim() : department.trim();
+    if (department === 'CUSTOM' && !resolvedDept) {
+      setFormError('Please enter a department name.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormError(null);
+    try {
+      const updated = await apiClient.updateVoiceProfile(profile.id, {
+        person_name: name.trim(),
+        title: title || undefined,
+        role: role.trim() || 'Member',
+        department: resolvedDept || undefined,
+        specialty: specialty.trim() || undefined,
+        primary_language: primaryLanguage || 'ro',
+        email: email.trim(),
+      });
+      onUpdated(updated);
+    } catch (err: any) {
+      setFormError(err?.message || 'The person details could not be updated.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden my-8"
+      >
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-person-title"
+          tabIndex={-1}
+          className="focus:outline-none"
+        >
+          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-7 h-7 rounded-lg bg-medpark-500 text-white flex items-center justify-center">
+                <Pencil className="w-4 h-4" aria-hidden="true" />
+              </div>
+              <h3 id="edit-person-title" className="font-bold text-slate-900 text-sm">
+                Edit Person Details &amp; Clinical Context
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={onCancel}
+              aria-label="Close edit person"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+            >
+              <X className="w-4 h-4" aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Update personal details and clinical context. Voice biometrics, consent records, and past meeting
+              confirmations remain completely preserved.
+            </p>
+            {formError && (
+              <p role="alert" className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                {formError}
+              </p>
+            )}
+
+            {/* Title + Name Row */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5 col-span-1">
+                <label htmlFor="edit-person-title-select" className="text-xs font-semibold text-slate-700">
+                  Title
+                </label>
+                <select
+                  id="edit-person-title-select"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full text-xs px-2.5 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                >
+                  {TITLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5 col-span-2">
+                <label htmlFor="edit-person-name" className="text-xs font-semibold text-slate-700">
+                  Full name <span className="text-rose-600" aria-hidden="true">*</span>
+                </label>
+                <input
+                  id="edit-person-name"
+                  type="text"
+                  required
+                  aria-required="true"
+                  data-autofocus
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                  placeholder="e.g., Elena Ceban"
+                />
+              </div>
+            </div>
+
+            {/* Department + Custom */}
+            <div className="space-y-1.5">
+              <label htmlFor="edit-person-department" className="text-xs font-semibold text-slate-700">
+                Department
+              </label>
+              <select
+                id="edit-person-department"
+                value={department}
+                onChange={(e) => setDepartment(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+              >
+                {MEDPARK_DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+                <option value="CUSTOM">+ Other / Custom department...</option>
+              </select>
+              {department === 'CUSTOM' && (
+                <input
+                  type="text"
+                  required
+                  value={customDepartment}
+                  onChange={(e) => setCustomDepartment(e.target.value)}
+                  placeholder="Enter department name..."
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20 mt-1.5"
+                />
+              )}
+            </div>
+
+            {/* Role & Specialty */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label htmlFor="edit-person-role" className="text-xs font-semibold text-slate-700">
+                  Clinical Role
+                </label>
+                <input
+                  id="edit-person-role"
+                  type="text"
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                  placeholder="e.g., Head of Dept, Consultant"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="edit-person-specialty" className="text-xs font-semibold text-slate-700">
+                  Specialty / Sub-specialty
+                </label>
+                <input
+                  id="edit-person-specialty"
+                  type="text"
+                  value={specialty}
+                  onChange={(e) => setSpecialty(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                  placeholder="e.g., Interventional Cardiology"
+                />
+              </div>
+            </div>
+
+            {/* Primary Language & Email */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label htmlFor="edit-person-language" className="text-xs font-semibold text-slate-700">
+                  Primary Meeting Language
+                </label>
+                <select
+                  id="edit-person-language"
+                  value={primaryLanguage}
+                  onChange={(e) => setPrimaryLanguage(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                >
+                  {LANGUAGE_OPTIONS.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="edit-person-email" className="text-xs font-semibold text-slate-700">
+                  Internal Hospital Email
+                </label>
+                <input
+                  id="edit-person-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20"
+                  placeholder="name@medpark.md"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isSubmitting}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex items-center space-x-1.5 px-4 py-2 text-xs font-bold bg-medpark-500 hover:bg-medpark-600 text-white rounded-lg shadow-xs transition-colors disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500 focus-visible:ring-offset-1"
+            >
+              {isSubmitting && <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" />}
+              <span>Save changes</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------------------------
 type PendingAction =
@@ -520,6 +829,7 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<VoiceProfile | null>(null);
   const [enrolling, setEnrolling] = useState<VoiceProfile | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [isActing, setIsActing] = useState(false);
@@ -867,6 +1177,7 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
                 profile={p}
                 recordingBlockedReason={recordingBlockedReason}
                 onEnroll={(profile) => setEnrolling(profile)}
+                onEdit={(profile) => setEditingProfile(profile)}
                 onWipeSamples={(profile) => setPending({ kind: 'wipe', profile })}
                 onWithdrawConsent={(profile) => setPending({ kind: 'withdraw', profile })}
                 onDelete={(profile) => setPending({ kind: 'delete', profile })}
@@ -883,6 +1194,19 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
             setProfiles((prev) => [created, ...prev]);
             setIsAddOpen(false);
             showToast('Person added', `${created.person_name} can now give consent and enroll.`);
+            refreshStatus();
+          }}
+        />
+      )}
+
+      {editingProfile && (
+        <EditPersonDialog
+          profile={editingProfile}
+          onCancel={() => setEditingProfile(null)}
+          onUpdated={(updated) => {
+            replaceProfile(updated);
+            setEditingProfile(null);
+            showToast('Person updated', `${updated.person_name}: details saved.`);
             refreshStatus();
           }}
         />

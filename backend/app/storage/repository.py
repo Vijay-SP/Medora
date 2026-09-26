@@ -242,7 +242,7 @@ class MeetingRepository:
             if meeting_id:
                 records = [r for r in records if r.meeting_id == meeting_id]
             records.sort(
-                key=lambda r: (_normalize_datetime(r.sent_at), r.id),
+                key=lambda r: (_normalize_datetime(r.created_at or r.sent_at), r.id),
                 reverse=True,
             )
             return records

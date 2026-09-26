@@ -74,10 +74,12 @@ class FileManager:
         """Removes the uploaded audio and generated exports of a deleted meeting (PHI retention)."""
         self._validate_meeting_id(meeting_id)
         failures: list[str] = []
-        for directory in [settings.UPLOADS_DIR / meeting_id, settings.EXPORTS_DIR / meeting_id]:
+        for directory in [settings.UPLOADS_DIR / meeting_id, settings.EXPORTS_DIR / meeting_id, settings.OUTBOX_DIR / meeting_id]:
             if not directory.exists():
                 continue
             try:
+                if directory.resolve().parent != directory.parent.resolve():
+                    raise OSError("Artifact directory resolves outside its storage root")
                 shutil.rmtree(directory)
                 logger.info(f"Purged artifact directory {directory} for meeting {meeting_id}")
             except OSError as exc:
@@ -86,6 +88,15 @@ class FileManager:
                 failures.append(f"{directory}: {exc}")
         if failures:
             raise OSError(f"Artifacts still in use for meeting {meeting_id}: {'; '.join(failures)}")
+
+    def get_delivery_eml_path(self, meeting_id: str, delivery_id: str) -> Path:
+        self._validate_meeting_id(meeting_id)
+        self._validate_opaque_id(delivery_id, "delivery")
+        root = settings.OUTBOX_DIR.resolve()
+        path = (root / meeting_id / f"{delivery_id}.eml").resolve()
+        if not path.is_relative_to(root):
+            raise ResourceNotFoundError("Email artifact resolves outside the outbox")
+        return path
 
     # --- Biometric artifacts (VOICEPRINTS_DIR only; nothing biometric ever goes into a JSON store) ---
     def _validate_opaque_id(self, value: str, kind: str) -> str:

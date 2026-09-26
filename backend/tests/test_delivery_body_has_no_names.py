@@ -190,6 +190,9 @@ def test_smtp_deliver_puts_names_only_in_attachments():
     assert record.status == DeliveryStatus.DISPATCHED, record.error_message
     assert len(sent) == 1
     message, kwargs = sent[0]
+    from email import policy
+    from email.parser import BytesParser
+    message = BytesParser(policy=policy.default).parsebytes(message)
     assert kwargs["hostname"] == "127.0.0.1" and kwargs["port"] == 9
     _assert_no_names(message["Subject"], "SMTP subject")
     body_part = message.get_body(preferencelist=("plain", "html"))

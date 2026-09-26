@@ -37,6 +37,7 @@ export const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
   const [guestRole, setGuestRole] = useState('External Guest');
+  const [guestLanguage, setGuestLanguage] = useState<'ro' | 'ru' | 'en'>('ro');
   const [guestError, setGuestError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -115,6 +116,8 @@ export const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
       const newAttendee: Attendee = {
         id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         person_id: profile.id,
+        primary_language: ['ro', 'ru', 'en'].includes(profile.primary_language || '')
+          ? profile.primary_language as 'ro' | 'ru' | 'en' : null,
         name: displayName,
         role: profile.role || 'Member',
         department: profile.department || undefined,
@@ -146,6 +149,7 @@ export const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
       name: guestName.trim(),
       role: guestRole.trim() || 'External Guest',
       department: 'Guest / External',
+      primary_language: guestLanguage,
       email: guestEmail.trim(),
     };
 
@@ -435,6 +439,15 @@ export const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
             </div>
           </div>
 
+          <label className="block text-xs font-semibold text-slate-700">
+            Preferred meeting language
+            <select value={guestLanguage} onChange={(e) => setGuestLanguage(e.target.value as 'ro' | 'ru' | 'en')}
+              className="block mt-1 w-full rounded-lg border border-slate-300 bg-white p-2">
+              <option value="ro">Română (RO)</option>
+              <option value="ru">Русский (RU)</option>
+              <option value="en">English (EN)</option>
+            </select>
+          </label>
           <div className="flex items-center justify-end space-x-2 pt-1">
             <button
               type="button"

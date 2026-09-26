@@ -288,10 +288,10 @@ def test_end_to_end_speech_pipeline_degraded_draft_is_held():
         print("PASSED: test_end_to_end_speech_pipeline_degraded_draft_is_held verified!")
 
 
-def test_end_to_end_speech_pipeline_llm_minutes_are_delivered():
+def test_end_to_end_speech_pipeline_llm_minutes_require_human_approval():
     """
     With LLM-grounded minutes (extraction engine mocked at the orchestrator boundary, no Ollama needed)
-    the auto-pilot generates documents and dispatches them through the mocked SMTP transport.
+    auto-pilot generates documents but waits for human approval before mocked SMTP dispatch.
     """
     with isolated_storage("medpark_test_e2e_delivery_") as test_dir:
         meeting, mock_segments = _prepare_speech_meeting()
@@ -317,16 +317,21 @@ def test_end_to_end_speech_pipeline_llm_minutes_are_delivered():
              patch("app.services.asr.whisper_engine.whisper_engine.transcribe", return_value=mock_segments), \
              patch.object(extraction_engine, "preflight", new=AsyncMock(return_value=LLM_PROVENANCE)), \
              patch.object(extraction_engine, "extract_minutes", new=AsyncMock(side_effect=grounded_extract)), \
-             patch("aiosmtplib.send", new_callable=AsyncMock) as smtp_send:
+             patch("aiosmtplib.send", new=AsyncMock(return_value=({}, "OK"))) as smtp_send:
             completed_meeting = asyncio.run(pipeline_orchestrator.run_pipeline(meeting.id))
 
         assert completed_meeting.processing_status == ProcessingStatus.COMPLETED
         assert completed_meeting.processing_progress == 100
         assert completed_meeting.audio_duration_seconds > 0.0
 
-        # In Auto-Pilot mode with successful delivery dispatch
-        assert completed_meeting.review_status == ReviewStatus.DELIVERED
-        assert smtp_send.await_count == 1
+        assert completed_meeting.review_status == ReviewStatus.PENDING_REVIEW
+        assert smtp_send.await_count == 0
+        assert repository.list_deliveries(meeting_id=meeting.id) == []
+
+        from app.api.v1.endpoints.review import approve_and_dispatch, ApprovalRequest
+        with patch("aiosmtplib.send", new=AsyncMock(return_value=({}, "OK"))):
+            approved = asyncio.run(approve_and_dispatch(meeting.id, ApprovalRequest(reviewer_name="Reviewer", expected_revision=1)))
+        assert approved.status == ReviewStatus.DELIVERED
 
         # Verify Minutes and Documents
         minutes = repository.get_minutes(meeting.id)
@@ -361,11 +366,11 @@ def test_end_to_end_speech_pipeline_llm_minutes_are_delivered():
         assert record.pdf_attachment_path == minutes.pdf_path
         assert record.docx_attachment_path == minutes.docx_path
 
-        print("PASSED: test_end_to_end_speech_pipeline_llm_minutes_are_delivered verified!")
+        print("PASSED: test_end_to_end_speech_pipeline_llm_minutes_require_human_approval verified!")
 
 
 if __name__ == "__main__":
     test_end_to_end_no_speech_behavior()
     test_end_to_end_speech_pipeline_degraded_draft_is_held()
-    test_end_to_end_speech_pipeline_llm_minutes_are_delivered()
+    test_end_to_end_speech_pipeline_llm_minutes_require_human_approval()
     print("All end-to-end integration tests passed successfully!")

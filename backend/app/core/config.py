@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Literal
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     # Base Storage Directories (all local, zero cloud dependencies)
     BASE_DIR: Path = Path(__file__).resolve().parent.parent.parent.parent
     DATA_DIR: Path = BASE_DIR / "data"
+    OUTBOX_DIR: Path | None = None
     UPLOADS_DIR: Path = DATA_DIR / "uploads"
     EXPORTS_DIR: Path = DATA_DIR / "exports"
     MODELS_DIR: Path = DATA_DIR / "models"
@@ -116,20 +118,23 @@ class Settings(BaseSettings):
     LLM_MAX_REPAIR_ATTEMPTS: int = 1
     LLM_MAX_FAILED_CHUNK_RATIO: float = 0.20
 
-    # SMTP Delivery Configuration (Local Mailpit by default)
+    # SMTP Delivery: Configure client/hospital server (host, port, auth) and update FROM sender info
     SMTP_HOST: str = "127.0.0.1"
     SMTP_PORT: int = 1025
     SMTP_USERNAME: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_USE_TLS: bool = False
+    SMTP_STARTTLS: bool | None = None
     SMTP_FROM_EMAIL: str = "minutes@medpark.md"
     SMTP_FROM_NAME: str = "Medpark Meeting Intelligence"
-    ALLOW_SIMULATED_DELIVERY: bool = False  # When False, unreachable SMTP is reported as FAILED
+    ALLOW_SIMULATED_DELIVERY: bool = False
+    ENABLE_LOCAL_OUTBOX_FALLBACK: bool = True
+    SMTP_TIMEOUT_SECONDS: float = Field(default=5.0, gt=0, le=60)
     
-    # Delivery Channel Selection (Mutual exclusivity: 'smtp' or 'n8n')
-    DELIVERY_CHANNEL: Literal["smtp", "n8n"] = "smtp"
+    # Delivery Routing: 'smtp', 'n8n', or 'local_outbox'
+    DELIVERY_CHANNEL: Literal["smtp", "n8n", "local_outbox"] = "smtp"
     N8N_WEBHOOK_URL: str = "http://127.0.0.1:5678/webhook/medpark-mom"
-    N8N_ENABLED: bool = False  # Set True to delegate routing exclusively to n8n
+    N8N_ENABLED: bool = False
 
     # Speaker Identity (CAM++ voiceprints, CPU-only; see docs/SPEAKER_IDENTITY_DESIGN.md)
     # Voiceprints are special-category biometric data: they live only as .npy files under VOICEPRINTS_DIR,
@@ -163,9 +168,15 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    @model_validator(mode="after")
+    def resolve_outbox_directory(self):
+        if self.OUTBOX_DIR is None:
+            self.OUTBOX_DIR = self.DATA_DIR / "outbox"
+        return self
+
     def ensure_directories(self) -> None:
         """Create all required local directories if they do not exist."""
-        for path in [self.DATA_DIR, self.UPLOADS_DIR, self.EXPORTS_DIR, self.MODELS_DIR, self.FIXTURES_DIR, self.VOICEPRINTS_DIR]:
+        for path in [self.DATA_DIR, self.UPLOADS_DIR, self.EXPORTS_DIR, self.MODELS_DIR, self.FIXTURES_DIR, self.VOICEPRINTS_DIR, self.OUTBOX_DIR]:
             path.mkdir(parents=True, exist_ok=True)
 
 
