@@ -403,9 +403,9 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
       )}
 
       {/* Main Studio Console */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Live Audio Controls & Visualizer */}
-        <div className="lg:col-span-6 xl:col-span-7 bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between space-y-6">
+        <div className="lg:col-span-6 xl:col-span-7 bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/90 shadow-sm space-y-6">
           <div>
             {/* Audio Device Selector */}
             <div className="space-y-1.5 mb-6">
