@@ -183,7 +183,7 @@ class SpeakerAttributionEvent(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     meeting_id: str
     cluster_id: str
-    action: Literal["confirm", "correct", "reject", "unknown"]
+    action: Literal["confirm", "correct", "reject", "unknown", "label"]
     person_id: Optional[str] = None
     person_name_snapshot: Optional[str] = None
     score_at_decision: Optional[float] = None

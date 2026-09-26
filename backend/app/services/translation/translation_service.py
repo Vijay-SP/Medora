@@ -10,7 +10,8 @@ import json
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.exceptions import LLMUnavailable, ExtractionError
-from app.models.extraction import MinutesOfMeeting, DecisionItem, ActionItem, RiskOrQuestionItem
+from app.models.extraction import MinutesOfMeeting
+from app.services.extraction.attribution_render import labels_in
 from app.services.extraction.llm_client import OllamaClient
 from app.storage.repository import repository
 
@@ -21,9 +22,10 @@ Traduci elementele oficiale de proces-verbal (subiecte agendă, decizii, sarcini
 
 REGULI MEDICALE ȘI DE STRUCTURĂ STRICTE:
 1. Păstrează denumirile de medicamente, dozele medicale (mg, ml, UI, g/zi etc.), denumirile internaționale și numele proprii EXACT neschimbate.
-2. Formulează concis, fidel și profesional, adecvat unui raport oficial de consiliu medical.
-3. Păstrează identificatorii "id" identici pentru fiecare element din liste.
-4. Răspunde EXCLUSIV cu un obiect JSON valid care respectă schema furnizată; fără text înainte sau după JSON."""
+2. Etichetele vorbitorilor (S1, S2, …) rămân EXACT neschimbate în traducere: nu le traduce, nu le omite, nu le renumerota și nu le înlocui cu nume.
+3. Formulează concis, fidel și profesional, adecvat unui raport oficial de consiliu medical.
+4. Păstrează identificatorii "id" identici pentru fiecare element din liste.
+5. Răspunde EXCLUSIV cu un obiect JSON valid care respectă schema furnizată; fără text înainte sau după JSON."""
 
 TRANSLATION_SCHEMA = {
     "type": "object",
@@ -73,8 +75,32 @@ TRANSLATION_SCHEMA = {
 }
 
 
+def _labels_in(text: str | None) -> set[str]:
+    # Speaker labels only: clinical S<n> notation ("L5-S1", "тоны S1 и S2") is content, not a label
+    return labels_in(text)
+
+
+def _keep_labels(source: str, translated: str, field: str, target_lang: str) -> str:
+    """
+    Token-preservation guard: a translation that drops, adds or renumbers a speaker label would attribute
+    the wrong person once rendered, so the Romanian text is kept for that field and the loss is logged.
+    """
+    if _labels_in(source) == _labels_in(translated):
+        return translated
+    logger.warning(
+        f"{target_lang.upper()} translation of {field} altered the speaker labels "
+        f"({sorted(_labels_in(source))} -> {sorted(_labels_in(translated))}); keeping the Romanian text"
+    )
+    return source
+
+
 class TranslationService:
-    """Air-gapped translation service for Minutes of Meeting dynamic responses."""
+    """
+    Air-gapped translation service for Minutes of Meeting dynamic responses.
+
+    Always translates the STORED label text ("S3 a propus ..."), never rendered names: the render layer
+    substitutes names per locale afterwards, so the *_ru/*_en fields stay name-free like the Romanian ones.
+    """
 
     def __init__(self):
         self._client: OllamaClient | None = None
@@ -206,6 +232,11 @@ class TranslationService:
         """Maps LLM translation JSON back to MinutesOfMeeting entity."""
         # 1. Agenda Topics
         translated_topics = [t.strip() for t in result.get("agenda_topics", []) if isinstance(t, str) and t.strip()]
+        if len(translated_topics) == len(minutes.agenda_topics):
+            translated_topics = [
+                _keep_labels(src, out, f"agenda_topics[{i}]", target_lang)
+                for i, (src, out) in enumerate(zip(minutes.agenda_topics, translated_topics))
+            ]
         if target_lang == "ru":
             minutes.agenda_topics_ru = translated_topics or minutes.agenda_topics
         elif target_lang == "en":
@@ -218,8 +249,8 @@ class TranslationService:
             if not match and idx < len(result.get("decisions", [])):
                 match = result["decisions"][idx]
             if match:
-                topic_trans = match.get("topic", "").strip() or d.topic
-                dec_trans = match.get("decision", "").strip() or d.decision
+                topic_trans = _keep_labels(d.topic, match.get("topic", "").strip() or d.topic, f"decision {d.id} topic", target_lang)
+                dec_trans = _keep_labels(d.decision, match.get("decision", "").strip() or d.decision, f"decision {d.id}", target_lang)
                 if target_lang == "ru":
                     d.topic_ru = topic_trans
                     d.decision_ru = dec_trans
@@ -234,8 +265,10 @@ class TranslationService:
             if not match and idx < len(result.get("action_items", [])):
                 match = result["action_items"][idx]
             if match:
-                task_trans = match.get("task", "").strip() or a.task
+                task_trans = _keep_labels(a.task, match.get("task", "").strip() or a.task, f"action {a.id}", target_lang)
                 deadline_trans = match.get("deadline_phrase")
+                if deadline_trans and a.deadline_phrase:
+                    deadline_trans = _keep_labels(a.deadline_phrase, str(deadline_trans).strip(), f"action {a.id} deadline", target_lang)
                 if target_lang == "ru":
                     a.task_ru = task_trans
                     if deadline_trans:
@@ -252,7 +285,7 @@ class TranslationService:
             if not match and idx < len(result.get("risks_and_questions", [])):
                 match = result["risks_and_questions"][idx]
             if match:
-                desc_trans = match.get("description", "").strip() or r.description
+                desc_trans = _keep_labels(r.description, match.get("description", "").strip() or r.description, f"risk {r.id}", target_lang)
                 if target_lang == "ru":
                     r.description_ru = desc_trans
                 elif target_lang == "en":

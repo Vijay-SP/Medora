@@ -121,8 +121,8 @@ TRACK_A_MAP: dict[str, Any] = {
 }
 
 TRACK_A_SYNTHESIS: dict[str, Any] = {
-    "summary_ro": "Comitetul a aprobat noul protocol de antibioterapie pentru ATI, în vigoare de luni. Doctorul Popescu actualizează ghidul clinic până luni, iar tabelele de dozare vor fi trimise până vineri. A fost semnalat riscul epuizării stocului de meropenem.",
-    "summary_en": "The committee approved the new ICU antibiotic protocol, effective Monday. The clinical guide will be updated by Monday and the dosage tables sent by Friday. A meropenem stock shortage was flagged as a risk.",
+    "summary_ro": "S1 a anunțat aprobarea noului protocol de antibioterapie pentru ATI, în vigoare de luni. S1 a atribuit unui coleg actualizarea ghidului clinic până luni; S3 va trimite tabelele de dozare până vineri. S2 a semnalat riscul epuizării stocului de meropenem.",
+    "summary_en": "S1 announced the approval of the new ICU antibiotic protocol, effective Monday. S1 assigned a colleague to update the clinical guide by Monday; S3 will send the dosage tables by Friday. S2 flagged the risk of a meropenem stock shortage.",
     "agenda_topics": ["Protocol antibioterapie ATI", "Stoc meropenem"],
 }
 

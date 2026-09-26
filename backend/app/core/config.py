@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     LLM_SEED: int = 1234
     LLM_CONTEXT_TOKENS: int = 4096
     LLM_MAX_TOKENS: int = 1100
+    # Synthesis writes three summaries (RO/RU/EN) in one call and translation re-emits every item: both need more
+    # room than a map call. Each call is still clamped so that prompt + num_predict fits LLM_CONTEXT_TOKENS.
+    LLM_SYNTHESIS_MAX_TOKENS: int = 1800
+    LLM_TRANSLATION_MAX_TOKENS: int = 1800
     LLM_REQUEST_TIMEOUT_S: float = 240.0
     LLM_HEALTH_TIMEOUT_S: float = 3.0
     LLM_KEEP_ALIVE: str = "10m"

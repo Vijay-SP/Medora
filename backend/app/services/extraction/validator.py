@@ -1,17 +1,19 @@
 """
 Medpark Meeting Intelligence System - Evidence Grounding & Deadline Validator
-Verifies that all extracted claims map to verbatim audio timestamps and resolves temporal expressions.
+Verifies that all extracted claims map to verbatim audio timestamps, resolves temporal expressions and
+grounds the speaker labels the LLM attributes in its prose to the labels of the cited lines.
 """
 
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher, get_close_matches
 import re
 import unicodedata
-from typing import Optional
+from typing import Any, Optional
 from app.core.logging import logger
 from app.models.meeting import Attendee, Meeting
 from app.models.transcript import Transcript, TranscriptSegment
 from app.models.extraction import MinutesOfMeeting, EvidenceQuote, RiskOrQuestionItem
+from app.services.extraction.attribution_render import SPEAKER_RE, sub_labels
 
 
 # Bare first-person / group pronouns the LLM sometimes reports as "owner_mention": verbatim but useless
@@ -43,6 +45,14 @@ _SENTENCE_END_CHARS = ".!?:;\n\"'«»()[]-–—"
 # A period after one of these is an abbreviation, not a sentence end ("Dr. Vasilescu")
 _TITLE_ABBREVIATIONS = {"dr", "prof", "conf", "dna", "dl", "ing", "mr", "mrs", "ms", "st", "д-р", "проф"}
 _ABBREVIATION_BEFORE_PERIOD = re.compile(r"([^\W\d_]+)\.$")
+# A capitalised word right after a person title is a person's name ("doctorul Popescu", "Dr. Ion Popescu",
+# "доктор Попеску"), whether or not the transcript contains it
+_PERSON_TITLE_RE = re.compile(
+    r"(?<![^\W\d_])(?:[Dd]r|[Dd]octor(?:ul|ului|ii|ilor|ița|iței)?|[Dd]oamn(?:a|ei)|[Dd]omn(?:ul|ului|ii|ilor)|[Dd]na|[Dd]l"
+    r"|[Pp]rof(?:esor(?:ul|ului|ii|ilor)?)?|[Cc]oleg(?:ul|ului|a|ei|ii|ilor)?|[Дд]-р|[Дд]октор(?:а|у|ом)?|[Пп]рофессор(?:а|у|ом)?"
+    r"|[Кк]оллег(?:а|и|е|у)|[Гг]осподин(?:а|у)?|[Гг]оспож(?:а|и|е|у)|Mr|Mrs|Ms)\.?\s+([^\W\d_][\w\-]*(?:\s+[^\W\d_][\w\-]*){0,2})"
+)
+PERSON_TOKEN_MIN_LENGTH = 3
 
 
 def normalise_text(text: Optional[str]) -> str:
@@ -113,6 +123,83 @@ def resolve_owner(
     return "Unassigned", "unassigned"
 
 
+def _label_of(segment: TranscriptSegment) -> Optional[str]:
+    """'Speaker 3' -> 'S3'; None for anything that is not an anonymous cluster label."""
+    match = SPEAKER_RE.fullmatch(segment.speaker)
+    return f"S{int(match.group(1))}" if match else None
+
+
+def _dominant_label(segments: list[TranscriptSegment]) -> Optional[str]:
+    """The label with the most speech across `segments` (ties: first seen); None when no labels."""
+    seconds: dict[str, float] = {}
+    for seg in segments:
+        label = _label_of(seg)
+        if label is None:
+            continue
+        spoken = seg.speech_seconds if seg.speech_seconds is not None else max(0.0, seg.end - seg.start)
+        seconds[label] = seconds.get(label, 0.0) + spoken
+    if not seconds:
+        return None
+    return max(seconds, key=lambda k: seconds[k])
+
+
+def _normalise_label(raw: Any) -> Optional[str]:
+    """Accepts 'S3', 's3', 'Speaker 3' (defensive: the prompt asks for 'S3'); None for anything else."""
+    if not isinstance(raw, str):
+        return None
+    token = raw.strip()
+    match = re.fullmatch(r"[Ss](\d{1,2})", token) or SPEAKER_RE.fullmatch(token)
+    return f"S{int(match.group(1))}" if match else None
+
+
+def ground_labels_in_text(text: Optional[str], allowed: set[str], fallback: Optional[str]) -> tuple[Optional[str], bool]:
+    """
+    Replaces every speaker-label token outside `allowed` with `fallback`; returns (text, repaired). With no
+    fallback (nothing cited) the text is left as it is: an item without evidence never becomes official.
+    Clinical S<n> notation ("L5-S1", "zgomotele S1 și S2", "galop S3") is not a label and is never rewritten.
+    """
+    if not text:
+        return text, False
+    repaired = False
+
+    def _sub(match: re.Match) -> str:
+        nonlocal repaired
+        label = f"S{int(match.group(1))}"
+        if label in allowed or fallback is None:
+            return match.group(0)
+        repaired = True
+        return fallback
+
+    return sub_labels(text, _sub), repaired
+
+
+def ground_speaker_labels(
+    text: Optional[str],
+    speakers: Optional[list],
+    cited_segments: list[TranscriptSegment],
+) -> tuple[Optional[str], list[str], bool]:
+    """
+    Fabrication guard for speaker labels: the allowed set is exactly the labels of the cited segments.
+    Any other S<digits> token in `text` or entry in `speakers` is replaced by the cited label with the
+    most speech (a label the model never saw cannot stand in the minutes). Returns
+    (text, speakers, repaired); speakers come back normalised, de-duplicated and capped at 3.
+    """
+    allowed = {label for label in (_label_of(seg) for seg in cited_segments) if label is not None}
+    fallback = _dominant_label(cited_segments)
+
+    text, repaired = ground_labels_in_text(text, allowed, fallback)
+
+    grounded: list[str] = []
+    for raw in speakers or []:
+        label = _normalise_label(raw)
+        if label is None or label not in allowed:
+            repaired = True
+            label = fallback
+        if label is not None and label not in grounded:
+            grounded.append(label)
+    return text, grounded[:3], repaired
+
+
 def _is_sentence_initial(before: str) -> bool:
     before = before.rstrip()
     if not before:
@@ -147,6 +234,32 @@ def _capitalised_runs(text: str) -> list[tuple[list[str], bool]]:
     if current:
         runs.append((current, current_initial))
     return runs
+
+
+def _titled_names(text: str) -> list[str]:
+    """Capitalised word runs that follow a person title ("doctorul Popescu" -> "Popescu")."""
+    names: list[str] = []
+    for match in _PERSON_TITLE_RE.finditer(text or ""):
+        words: list[str] = []
+        for word in match.group(1).split():
+            if not word[0].isupper() or normalise_text(word) in PROSE_WHITELIST:
+                break
+            words.append(word)
+        if words:
+            names.append(" ".join(words))
+    return names
+
+
+def _matches_person_token(norm: str, person_tokens: set[str]) -> bool:
+    """Exact, inflected ("Popescului") or near-identical match against a known person-name token."""
+    if norm in person_tokens:
+        return True
+    for token in person_tokens:
+        if len(token) >= OWNER_TOKEN_MIN_LENGTH and len(norm) >= OWNER_TOKEN_MIN_LENGTH and (norm.startswith(token) or token.startswith(norm)):
+            return True
+        if SequenceMatcher(None, norm, token).ratio() >= OWNER_TOKEN_SIMILARITY:
+            return True
+    return False
 
 
 def audit_free_prose(minutes: MinutesOfMeeting, transcript: Transcript, meeting: Meeting) -> list[str]:
@@ -194,6 +307,53 @@ def audit_free_prose(minutes: MinutesOfMeeting, transcript: Transcript, meeting:
                 seen.add(key)
                 suspects.append(run_text)
     return suspects
+
+
+def audit_person_names(minutes: MinutesOfMeeting, transcript: Transcript, meeting: Meeting) -> list[str]:
+    """
+    Label-styled minutes (speaker_label_style "labels") name people ONLY through S<n> tokens, so any person
+    name in their prose is a violation even when the transcript contains it (audit_free_prose accepts
+    transcript words): a capitalised name after a person title ("doctorul Popescu", "Dr. Ion Popescu",
+    "доктору Попеску"), or a token of an attendee name or of a name the transcript uses after a title.
+    Returns the names found; the render layer would otherwise print them inline as if confirmed.
+    Impersonal minutes return [] (their prose predates the label contract).
+    """
+    if minutes.speaker_label_style != "labels":
+        return []
+    person_tokens: set[str] = set()
+    for attendee in meeting.attendees:
+        person_tokens.update(_name_tokens(attendee.name))
+    for seg in transcript.segments:
+        for name in _titled_names(seg.display_text):
+            person_tokens.update(_name_tokens(name))
+    person_tokens = {t for t in person_tokens if len(t) >= PERSON_TOKEN_MIN_LENGTH and t not in PROSE_WHITELIST}
+
+    fields: list[str] = [minutes.summary_ro or "", minutes.summary_ru or "", minutes.summary_en or ""]
+    fields.extend(minutes.agenda_topics)
+    for dec in minutes.decisions:
+        fields.extend([dec.topic, dec.decision])
+    for act in minutes.action_items:
+        fields.append(act.task)
+    for risk in minutes.risks_and_questions:
+        fields.append(risk.description)
+
+    found: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: str) -> None:
+        key = normalise_text(name)
+        if key and not any(key in known or known in key for known in seen):
+            seen.add(key)
+            found.append(name)
+
+    for field in fields:
+        for name in _titled_names(field):
+            _add(name)
+        for tokens, _sentence_initial in _capitalised_runs(field):
+            hits = [t for t in tokens if _matches_person_token(normalise_text(t), person_tokens)]
+            if hits:
+                _add(" ".join(hits))
+    return found
 
 
 class EvidenceValidator:

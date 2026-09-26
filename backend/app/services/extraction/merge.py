@@ -34,7 +34,7 @@ def _same_item(a: dict, b: dict, text_key: str) -> bool:
 
 
 def _merge_pair(base: dict, other: dict, text_key: str) -> dict:
-    """Merged text = longer; evidence = union; priority/severity = max; owner/deadline = first non-null."""
+    """Merged text = longer; evidence = union; speakers = ordered union; priority/severity = max; owner/deadline = first non-null."""
     longer, shorter = (base, other) if len(base.get(text_key, "")) >= len(other.get(text_key, "")) else (other, base)
     merged = dict(longer)
     merged["evidence_idx"] = sorted(set(base["evidence_idx"]) | set(other["evidence_idx"]))
@@ -45,6 +45,13 @@ def _merge_pair(base: dict, other: dict, text_key: str) -> dict:
     for field in _FIRST_NON_NULL_FIELDS:
         if field in base or field in other:
             merged[field] = base.get(field) if base.get(field) is not None else other.get(field)
+    if "speakers" in base or "speakers" in other:
+        # Attributed labels = ordered union (earlier report first), capped like the map schema
+        union: list = []
+        for label in [*(base.get("speakers") or []), *(other.get("speakers") or [])]:
+            if label not in union:
+                union.append(label)
+        merged["speakers"] = union[:3]
     return merged
 
 

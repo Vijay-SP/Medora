@@ -121,7 +121,8 @@ export interface TranscriptSegment {
   start: number;
   end: number;
   speaker: string; // anonymous label, pattern ^Speaker \d+$
-  // Confirmed Person.id; non-null only when attribution_state is confirmed or corrected.
+  // Confirmed Person.id; non-null when attribution_state is confirmed. A "corrected" segment may
+  // instead carry a reviewer-assigned label (attribution_basis "reviewer_label") with no Person.
   speaker_id?: string | null;
   raw_text: string;
   corrected_text?: string;
@@ -146,6 +147,8 @@ export interface TranscriptSegment {
   confirmed_by?: string | null;
   confirmed_at?: string | null;
   confirmed_for_revision?: number | null;
+  // voiceprint = tied to an enrolled Person; reviewer_label = a typed/attendee label, no voiceprint stored.
+  attribution_basis?: 'voiceprint' | 'reviewer_label';
   suggestion?: SpeakerSuggestion | null;
   suggested_identity?: string | null; // mirror of suggestion.person_name; reviewer prompt only
   speech_seconds?: number | null; // VAD speech inside the segment
@@ -256,6 +259,9 @@ export interface MinutesOfMeeting {
   needs_name_review?: boolean; // a non-roster owner or a suspect proper noun exists
   failed_chunks?: number[]; // transcript chunk ordinals that failed extraction twice
   extraction_stats?: ExtractionStats;
+  // "labels" = prose attributes to S<n> tokens that GET /minutes resolves to names/"Vorbitorul n";
+  // "impersonal" (or absent) = older minutes written without speaker tokens.
+  speaker_label_style?: 'impersonal' | 'labels';
 }
 
 export interface DeliveryRecord {
@@ -403,6 +409,15 @@ export interface ClusterSampleTurn {
   speech_seconds: number;
 }
 
+// One pickable name from Meeting.attendees (roster people AND client-side guests). is_guest = the
+// attendee has no Person record (id "guest_*" or role containing "Guest").
+export interface SpeakerLabelOption {
+  id: string;
+  name: string;
+  role: string;
+  is_guest: boolean;
+}
+
 export interface SpeakerCluster {
   cluster_id: string; // "SPEAKER_02"
   display_label: string; // "Speaker 2"
@@ -423,6 +438,9 @@ export interface SpeakerCluster {
   unprintable_turns: number;
   blocking_reasons: string[]; // non-empty => confirmation refused (409) until resolved
   merge_suggestion_with: string[]; // other cluster ids that match the same person
+  // Reviewer-label support (absent on backends built before it).
+  label_options?: SpeakerLabelOption[]; // built from meeting.attendees
+  current_label?: string | null; // the reviewer-assigned label when state is corrected without a profile
 }
 
 export interface SpeakersResponse {
@@ -434,11 +452,16 @@ export interface SpeakersResponse {
   warnings: string[];
 }
 
-export type SpeakerDecisionAction = 'confirm' | 'correct' | 'reject' | 'unknown';
+// label = attach a reviewer-typed name or a meeting attendee/guest to the cluster (state "corrected",
+// no voiceprint stored); it needs display_label or attendee_id instead of profile_id.
+export type SpeakerDecisionAction = 'confirm' | 'correct' | 'reject' | 'unknown' | 'label';
 
 export interface SpeakerConfirmRequest {
   action: SpeakerDecisionAction;
   profile_id?: string | null;
+  // action "label" only: a free-text label (2-60 chars, not "Speaker N"/"SN") or an attendee id.
+  display_label?: string | null;
+  attendee_id?: string | null;
   expected_revision: number;
   reviewer_name: string;
   reviewer_role?: string;

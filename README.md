@@ -103,9 +103,10 @@ f:\DEEPTECH\
 │   │   │   │   ├── llm_client.py         # Ollama native API client (health, chat, unload)
 │   │   │   │   ├── chunker.py            # Token-budgeted chunks over the indexed transcript
 │   │   │   │   ├── merge.py              # Deterministic de-duplication across chunks
-│   │   │   │   ├── llm_engine.py         # Map/reduce extraction engine (preflight, unload)
+│   │   │   │   ├── llm_engine.py         # Map/reduce extraction engine (preflight, label grounding, unload)
 │   │   │   │   ├── heuristic_extractor.py# Rule fallback; stamps is_degraded (never emailed)
-│   │   │   │   └── validator.py          # Verbatim citations, owner resolution, name guard, deadlines
+│   │   │   │   ├── attribution_render.py # Read-time "S2" -> confirmed name / "Vorbitorul 2" per locale
+│   │   │   │   └── validator.py          # Verbatim citations, owner resolution, name + label guard, deadlines
 │   │   │   ├── documents/
 │   │   │   │   └── generator.py          # Versioned PDF and DOCX reports
 │   │   │   └── delivery/
@@ -134,7 +135,10 @@ f:\DEEPTECH\
 │       ├── test_speaker_diarization_groundtruth.py # SAPI two-voice meeting recovered by the diarizer
 │       ├── test_delivery_body_has_no_names.py # Email body/subject/payload carry no person names
 │       ├── test_asr_text_lid_and_windowing.py # Text LID, window packing, lexicon, hotword token budget (offline)
-│       └── test_asr_engine_options.py    # Engine decode options / restricted LID against a fake model (no CUDA)
+│       ├── test_asr_engine_options.py    # Engine decode options / restricted LID against a fake model (no CUDA)
+│       ├── test_inline_attribution.py    # Label prompts/schema, label grounding + audit note, render layer (FakeClient)
+│       ├── test_speaker_label_action.py  # /speakers action "label", ?names=, resolved translate, PDF/DOCX names inline
+│       └── test_translation_service.py   # RU/EN translation cache + speaker-label preservation (fake client)
 │
 ├── frontend/                             # React + Vite + TypeScript + Tailwind UI
 │   ├── src/
@@ -241,6 +245,26 @@ Details, thresholds, measured numbers and what is not claimed: [`docs/VOICE_PROF
 - **Honest scope:** accuracy is proven on the two Windows SAPI voices (12/12 turns, suggestion cosine 0.95-0.97);
   far-field meeting-room accuracy is unmeasured, and the GPU end-to-end script has not been run yet.
 
+### G. Inline speaker attribution (labels in storage, names at read time)
+Details, the reviewer's view before/after, and the non-claims: [`docs/INLINE_ATTRIBUTION.md`](docs/INLINE_ATTRIBUTION.md).
+- **The LLM writes facilitator-style prose against anonymous labels** ("S3 a propus modificarea dozei; S1 a
+  aprobat", "S2 va trimite documentul până vineri") and lists the attributed `speakers` per item. Labels are the
+  only way the model may name anyone; a label no cited line spoke is replaced (`ground_speaker_labels`) and the
+  minutes get a `NOTĂ AUDIT` item plus `needs_name_review`.
+- **Storage keeps the labels.** `GET /minutes` (default `names=resolved`), `POST /translate`, the PDF and the DOCX
+  render them through `attribution_render`: the reviewer-confirmed or reviewer-assigned name where the cluster has
+  a printable confirmed/corrected turn, otherwise `Vorbitorul N` / `Speaker N` / `Участник N` per language.
+  A reject undoes the rendering without re-extraction. Clinical notation (L5-S1, heart sounds S1/S2, root S1)
+  is never treated as a label, and `PUT /minutes` turns resolved names back into tokens for unedited and
+  edited fields alike. Known gaps (cue-word clinical guard, raw unknown tokens): `docs/INLINE_ATTRIBUTION.md`.
+- **A reviewer may assign a label** (`action: "label"` with a typed `display_label` or an `attendee_id`, guests
+  included) when nobody is enrolled: stored as `corrected` with `attribution_basis="reviewer_label"`, no
+  voiceprint, no Person, same revision binding and 2.0 s printable floor as a confirmation. Auto-pilot still cannot
+  name anyone.
+- **Verified offline** with a fake LLM client and TestClient (`test_inline_attribution.py`,
+  `test_speaker_label_action.py`, `test_translation_service.py`); how well Qwen3-4B keeps the labels straight on
+  real audio is not yet measured.
+
 ---
 
 ## 4. Quickstart Guide
@@ -303,7 +327,8 @@ $env:PYTHONPATH="backend"
 .venv\Scripts\python.exe backend/tests/test_audio_processing.py
 .venv\Scripts\python.exe backend/tests/test_extraction_and_grounding.py   # heuristic path, no LLM
 .venv\Scripts\python.exe backend/tests/test_document_generation.py
-.venv\Scripts\python.exe backend/tests/test_end_to_end_pipeline.py        # Whisper and SMTP mocked
+$env:WHISPER_DEVICE="cpu"; $env:CUDA_VISIBLE_DEVICES="-1"   # keeps any unpatched ASR call off the GPU (see below)
+.venv\Scripts\python.exe backend/tests/test_end_to_end_pipeline.py        # SMTP mocked; Whisper mocked only in the two speech tests (the no-speech test runs the real ASR factory)
 .venv\Scripts\python.exe backend/tests/test_llm_extraction_pipeline.py    # fake LLM client, offline
 .venv\Scripts\python.exe backend/tests/test_llm_extraction_live.py        # real Ollama; skips when absent
 .venv\Scripts\python.exe backend/tests/test_speaker_embedder.py            # fbank + CAM++ wrapper (skips without the ONNX)
@@ -314,6 +339,9 @@ $env:PYTHONPATH="backend"
 .venv\Scripts\python.exe backend/tests/test_voice_profiles_api.py          # enrollment API flow (SAPI samples)
 .venv\Scripts\python.exe backend/tests/test_asr_text_lid_and_windowing.py  # text LID, window packing, lexicon, hotword budget (offline)
 .venv\Scripts\python.exe backend/tests/test_asr_engine_options.py          # engine options vs a fake model, restricted LID (no CUDA)
+.venv\Scripts\python.exe backend/tests/test_inline_attribution.py          # label prompts, grounding, render layer (fake LLM client)
+.venv\Scripts\python.exe backend/tests/test_speaker_label_action.py        # /speakers action "label", resolved minutes, PDF/DOCX
+.venv\Scripts\python.exe backend/tests/test_translation_service.py         # translation cache + speaker-label preservation
 ```
 The voice tests set their own isolated `DATA_DIR`/`UPLOADS_DIR`/`EXPORTS_DIR`/`FIXTURES_DIR`/`VOICEPRINTS_DIR`
 before importing `app`. `scripts/voice_e2e_gpu.py` is the only voice script that touches the GPU and refuses to

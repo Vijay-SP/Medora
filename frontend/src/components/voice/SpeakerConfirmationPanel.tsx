@@ -14,7 +14,13 @@ import {
   Headphones,
   GitMerge,
 } from 'lucide-react';
-import { SpeakersResponse, SpeakerCluster, VoiceProfile, SpeakerDecisionAction } from '../../types';
+import {
+  SpeakersResponse,
+  SpeakerCluster,
+  SpeakerLabelOption,
+  VoiceProfile,
+  SpeakerDecisionAction,
+} from '../../types';
 import { apiClient } from '../../api/client';
 import { useToast } from '../Toast';
 
@@ -51,21 +57,76 @@ const formatDuration = (seconds: number): string => {
 type ListenedMap = Record<string, Record<string, number>>;
 
 // ---------------------------------------------------------------------------------------------
-// "Someone else" menu: enrolled people only, keyboard navigable, focus returns to the trigger.
+// Reviewer labels: a name that goes on the cluster without a voiceprint. Either a meeting attendee
+// (roster person or client-side guest, by id) or free text typed here. `name` is only for the toast.
+// ---------------------------------------------------------------------------------------------
+export interface LabelChoice {
+  name: string;
+  display_label?: string;
+  attendee_id?: string;
+}
+
+const LABEL_MIN = 2;
+const LABEL_MAX = 60;
+// Same limits and wording as the backend's validate_label (speakers.py) so a client-side rejection
+// reads exactly like a 400 would.
+const ANON_LABEL_RE = /^(Speaker \d+|S\d+)$/i;
+
+export const validateCustomLabel = (raw: string): string | null => {
+  const value = raw.trim();
+  if (value.length < LABEL_MIN || value.length > LABEL_MAX) {
+    return `display_label must be ${LABEL_MIN}-${LABEL_MAX} characters after trimming`;
+  }
+  if (ANON_LABEL_RE.test(value)) {
+    return `'${value}' is an anonymous speaker label, not a name; type the person's name or pick an attendee`;
+  }
+  return null;
+};
+
+// ---------------------------------------------------------------------------------------------
+// "Someone else" menu: three sections (enrolled voices, meeting attendees & guests, custom label),
+// keyboard navigable, focus returns to the trigger. The custom label is an inline row inside the
+// same menu: Enter submits, Escape steps back to the menu, arrows stay inert while typing.
 // ---------------------------------------------------------------------------------------------
 interface PersonMenuProps {
   label: string;
   people: VoiceProfile[];
   excludeIds: string[];
+  // Meeting attendees and guests; undefined when the backend does not provide them yet.
+  labelOptions?: SpeakerLabelOption[];
+  // The label currently on the cluster (pre-fills the custom row so it can be edited, not retyped).
+  currentLabel?: string | null;
   disabled: boolean;
   onPick: (profile: VoiceProfile) => void;
+  onPickLabel: (choice: LabelChoice) => void;
 }
 
-const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disabled, onPick }) => {
+const PersonMenu: React.FC<PersonMenuProps> = ({
+  label,
+  people,
+  excludeIds,
+  labelOptions,
+  currentLabel,
+  disabled,
+  onPick,
+  onPickLabel,
+}) => {
   const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customValue, setCustomValue] = useState('');
+  const [customError, setCustomError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const customItemRef = useRef<HTMLButtonElement>(null);
+  const customInputRef = useRef<HTMLInputElement>(null);
   const options = people.filter((p) => !excludeIds.includes(p.id));
+  const attendees = labelOptions ?? [];
+
+  const close = () => {
+    setOpen(false);
+    setCustomOpen(false);
+    setCustomError(null);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -75,12 +136,25 @@ const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disa
     const handleKey = (e: KeyboardEvent) => {
       const list = listRef.current;
       if (!list) return;
+      // While the custom-label input owns focus, arrows edit text; only Escape is intercepted here.
+      if (document.activeElement === customInputRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          setCustomOpen(false);
+          setCustomError(null);
+          window.setTimeout(() => customItemRef.current?.focus(), 0);
+        } else if (e.key === 'Tab') {
+          close();
+        }
+        return;
+      }
       const nodes = Array.from(list.querySelectorAll<HTMLElement>('[role="menuitem"]'));
       const idx = nodes.indexOf(document.activeElement as HTMLElement);
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        setOpen(false);
+        close();
         triggerRef.current?.focus();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -89,12 +163,12 @@ const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disa
         e.preventDefault();
         nodes[(idx - 1 + nodes.length) % nodes.length]?.focus();
       } else if (e.key === 'Tab') {
-        setOpen(false);
+        close();
       }
     };
     const handleClick = (e: MouseEvent) => {
       if (!listRef.current?.contains(e.target as Node) && e.target !== triggerRef.current) {
-        setOpen(false);
+        close();
       }
     };
     document.addEventListener('keydown', handleKey, true);
@@ -105,6 +179,47 @@ const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disa
     };
   }, [open]);
 
+  // Opening the custom row moves focus into the input; the menu's arrow handler stands down there.
+  useEffect(() => {
+    if (open && customOpen) customInputRef.current?.focus();
+  }, [open, customOpen]);
+
+  const pickProfile = (p: VoiceProfile) => {
+    close();
+    triggerRef.current?.focus();
+    onPick(p);
+  };
+
+  const pickAttendee = (a: SpeakerLabelOption) => {
+    close();
+    triggerRef.current?.focus();
+    onPickLabel({ name: a.name, attendee_id: a.id });
+  };
+
+  const submitCustom = () => {
+    if (disabled) return;
+    const err = validateCustomLabel(customValue);
+    if (err) {
+      setCustomError(err);
+      customInputRef.current?.focus();
+      return;
+    }
+    const value = customValue.trim();
+    close();
+    triggerRef.current?.focus();
+    onPickLabel({ name: value, display_label: value });
+  };
+
+  const openCustom = () => {
+    setCustomValue(currentLabel ?? '');
+    setCustomError(null);
+    setCustomOpen(true);
+  };
+
+  const itemClass =
+    'w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-medpark-50 focus:outline-none focus-visible:bg-medpark-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-medpark-500';
+  const eyebrowClass = 'px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500';
+
   return (
     <div className="relative">
       <button
@@ -113,7 +228,7 @@ const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disa
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? close() : setOpen(true))}
         className="w-full inline-flex items-center justify-center space-x-1.5 px-3 py-2 text-xs font-bold bg-white border border-slate-300 text-slate-800 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
       >
         <span>{label}</span>
@@ -123,32 +238,114 @@ const PersonMenu: React.FC<PersonMenuProps> = ({ label, people, excludeIds, disa
         <div
           ref={listRef}
           role="menu"
-          aria-label="Enrolled people"
-          className="absolute z-30 mt-1 left-0 right-0 min-w-[14rem] bg-white border border-slate-200 rounded-xl shadow-xl p-1 max-h-64 overflow-y-auto"
+          aria-label="Identify this speaker"
+          className="absolute z-30 mt-1 left-0 right-0 min-w-[16rem] bg-white border border-slate-200 rounded-xl shadow-xl p-1 max-h-80 overflow-y-auto"
         >
-          {options.length === 0 ? (
-            <p className="px-3 py-2 text-xs text-slate-500 leading-relaxed">
-              No other enrolled voice to choose from. Enroll people on the People &amp; Voices page,
-              then use Re-match.
-            </p>
-          ) : (
-            options.map((p) => (
+          {/* Section 1: enrolled voice profiles (a voiceprint match; the only path to "confirmed"). */}
+          <div role="group" aria-label="Enrolled voice profiles">
+            <p className={eyebrowClass}>Enrolled voice profiles</p>
+            {options.length === 0 ? (
+              <p className="px-3 pb-2 text-xs text-slate-500 leading-relaxed">
+                No other enrolled voice to choose from. Enroll people on the People &amp; Voices page,
+                then use Re-match.
+              </p>
+            ) : (
+              options.map((p) => (
+                <button key={p.id} type="button" role="menuitem" onClick={() => pickProfile(p)} className={itemClass}>
+                  <span className="font-semibold text-slate-900">{p.person_name}</span>
+                  {p.role && <span className="text-slate-500"> &middot; {p.role}</span>}
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* Section 2: meeting attendees and guests (a label, no voiceprint). Hidden on older backends. */}
+          {labelOptions !== undefined && (
+            <div role="group" aria-label="Meeting attendees and guests" className="mt-1 pt-1 border-t border-slate-100">
+              <p className={eyebrowClass}>Meeting attendees &amp; guests</p>
+              {attendees.length === 0 ? (
+                <p className="px-3 pb-2 text-xs text-slate-500 leading-relaxed">
+                  This meeting has no attendees listed.
+                </p>
+              ) : (
+                attendees.map((a) => (
+                  <button key={a.id} type="button" role="menuitem" onClick={() => pickAttendee(a)} className={itemClass}>
+                    <span className="font-semibold text-slate-900">{a.name}</span>
+                    {a.role && <span className="text-slate-500"> &middot; {a.role}</span>}
+                    {a.is_guest && (
+                      <span className="ml-1.5 inline-block align-middle px-1.5 py-px rounded-md border border-slate-200 bg-slate-50 text-[10px] font-semibold text-slate-600">
+                        Guest
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {/* Section 3: custom label, typed inline. */}
+          <div role="group" aria-label="Custom label" className="mt-1 pt-1 border-t border-slate-100">
+            <p className={eyebrowClass}>Custom label</p>
+            {!customOpen ? (
               <button
-                key={p.id}
+                ref={customItemRef}
                 type="button"
                 role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                  onPick(p);
-                }}
-                className="w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-medpark-50 focus:outline-none focus-visible:bg-medpark-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-medpark-500"
+                onClick={openCustom}
+                className={`${itemClass} inline-flex items-center space-x-1.5`}
               >
-                <span className="font-semibold text-slate-900">{p.person_name}</span>
-                {p.role && <span className="text-slate-500"> &middot; {p.role}</span>}
+                <PenLine className="w-3.5 h-3.5 text-medpark-600" aria-hidden="true" />
+                <span className="font-semibold text-slate-900">Custom label&hellip;</span>
               </button>
-            ))
-          )}
+            ) : (
+              <div className="px-2 pb-2 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={customInputRef}
+                    type="text"
+                    value={customValue}
+                    disabled={disabled}
+                    maxLength={LABEL_MAX}
+                    aria-label="Custom speaker label"
+                    aria-invalid={customError ? true : undefined}
+                    aria-describedby="speaker-custom-label-help"
+                    placeholder="e.g., Head nurse, Dr. Popescu"
+                    onChange={(e) => {
+                      setCustomValue(e.target.value);
+                      if (customError) setCustomError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        submitCustom();
+                      }
+                    }}
+                    className="min-w-0 flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-medpark-500/20 disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={submitCustom}
+                    className="px-2.5 py-1.5 text-xs font-bold text-white bg-medpark-500 hover:bg-medpark-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500 focus-visible:ring-offset-1"
+                  >
+                    Assign
+                  </button>
+                </div>
+                <p
+                  id="speaker-custom-label-help"
+                  role={customError ? 'alert' : undefined}
+                  className={`text-[11px] leading-relaxed ${customError ? 'text-rose-700 font-semibold' : 'text-slate-500'}`}
+                >
+                  {customError ?? 'Enter assigns, Escape goes back. 2-60 characters.'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <p className="px-3 pt-2 pb-1 text-[11px] text-slate-500 leading-relaxed border-t border-slate-100 mt-1">
+            Assigned names appear inline in the minutes and transcript for this cluster&rsquo;s longer
+            turns; no voiceprint is stored.
+          </p>
         </div>
       )}
     </div>
@@ -166,7 +363,12 @@ interface ClusterCardProps {
   listenedSeconds: number;
   isBusy: boolean;
   onPlay: (start: number, end: number) => void;
-  onDecide: (cluster: SpeakerCluster, action: SpeakerDecisionAction, profile?: VoiceProfile) => void;
+  onDecide: (
+    cluster: SpeakerCluster,
+    action: SpeakerDecisionAction,
+    profile?: VoiceProfile,
+    label?: LabelChoice
+  ) => void;
 }
 
 const ClusterCard: React.FC<ClusterCardProps> = ({
@@ -183,7 +385,19 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
   const disabled = blocked || isBusy;
   const isNamed = cluster.state === 'confirmed' || cluster.state === 'corrected';
   const suggestedName = cluster.suggested_name ?? null;
-  const confirmedName = cluster.confirmed_name ?? null;
+  // A reviewer label lands as "corrected" with no Person behind it; the name is current_label
+  // (older backends only expose it through confirmed_name).
+  const assignedLabel =
+    cluster.state === 'corrected' && !cluster.confirmed_profile_id
+      ? (cluster.current_label ?? cluster.confirmed_name ?? null)
+      : null;
+  const isLabelAssigned = assignedLabel !== null;
+  const confirmedName = isLabelAssigned ? assignedLabel : (cluster.confirmed_name ?? null);
+  const labelMenuProps = {
+    labelOptions: cluster.label_options,
+    currentLabel: isLabelAssigned ? assignedLabel : null,
+    onPickLabel: (choice: LabelChoice) => onDecide(cluster, 'label', undefined, choice),
+  };
   const revisionMismatch =
     isNamed &&
     revision !== null &&
@@ -208,9 +422,11 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
       ? 'border-2 border-dashed border-amber-400 bg-amber-50/40'
       : cluster.state === 'confirmed'
         ? 'border border-emerald-300 bg-white'
-        : cluster.state === 'corrected'
-          ? 'border border-medpark-500/50 bg-white'
-          : 'border border-slate-200 bg-white';
+        : isLabelAssigned
+          ? 'border border-medpark-500/50 bg-medpark-50/40'
+          : cluster.state === 'corrected'
+            ? 'border border-medpark-500/50 bg-white'
+            : 'border border-slate-200 bg-white';
 
   const header = (() => {
     if (cluster.state === 'confirmed' && confirmedName) {
@@ -218,6 +434,14 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
         <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold">
           <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
           <span>Confirmed &mdash; {confirmedName}</span>
+        </span>
+      );
+    }
+    if (isLabelAssigned && confirmedName) {
+      return (
+        <span className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white border border-medpark-500 text-medpark-700 text-xs font-bold">
+          <PenLine className="w-4 h-4" aria-hidden="true" />
+          <span>Assigned &mdash; {confirmedName}</span>
         </span>
       );
     }
@@ -285,7 +509,20 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
               but the minutes are now revision <span className="tabular-nums font-bold">{revision}</span>. Listen again
               and re-confirm so the name applies to the current document.
             </p>
-            {confirmedProfile && (
+            {isLabelAssigned && confirmedName && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() =>
+                  onDecide(cluster, 'label', undefined, { name: confirmedName, display_label: confirmedName })
+                }
+                className="inline-flex items-center space-x-1 px-2.5 py-1 text-[11px] font-bold bg-white border border-amber-300 rounded-lg hover:bg-amber-100 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+              >
+                <RefreshCw className="w-3 h-3" aria-hidden="true" />
+                <span>Re-assign {confirmedName} for revision {revision}</span>
+              </button>
+            )}
+            {!isLabelAssigned && confirmedProfile && (
               <button
                 type="button"
                 disabled={disabled}
@@ -317,7 +554,9 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
             {cluster.suggested_profile_id || cluster.confirmed_profile_id
               ? 'Least similar turns to the voiceprint - listen to these, not the easy ones'
-              : 'Sample turns from this speaker'}
+              : isLabelAssigned
+                ? 'Sample turns from this speaker (label assigned; no voiceprint to compare against)'
+                : 'Sample turns from this speaker'}
           </p>
           <p className="inline-flex items-center space-x-1 text-[11px] font-semibold text-slate-600 tabular-nums" aria-live="polite">
             <Headphones className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
@@ -389,6 +628,7 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
             excludeIds={cluster.suggested_profile_id ? [cluster.suggested_profile_id] : []}
             disabled={disabled}
             onPick={(p) => onDecide(cluster, 'correct', p)}
+            {...labelMenuProps}
           />
           <button
             type="button"
@@ -412,11 +652,12 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
       {cluster.state === 'anonymous' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <PersonMenu
-            label="Identify as an enrolled person"
+            label="Identify this speaker"
             people={people}
             excludeIds={[]}
             disabled={disabled}
             onPick={(p) => onDecide(cluster, 'correct', p)}
+            {...labelMenuProps}
           />
           <button
             type="button"
@@ -438,11 +679,12 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <PersonMenu
-              label="Change person"
+              label="Change name"
               people={people}
               excludeIds={cluster.confirmed_profile_id ? [cluster.confirmed_profile_id] : []}
               disabled={disabled}
               onPick={(p) => onDecide(cluster, 'correct', p)}
+              {...labelMenuProps}
             />
             <button
               type="button"
@@ -573,7 +815,8 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
   const submitDecision = async (
     cluster: SpeakerCluster,
     action: SpeakerDecisionAction,
-    profile?: VoiceProfile
+    profile?: VoiceProfile,
+    label?: LabelChoice
   ) => {
     if (!data) return;
     setBusyClusterId(cluster.cluster_id);
@@ -581,6 +824,8 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
       await apiClient.confirmSpeaker(meetingId, cluster.cluster_id, {
         action,
         profile_id: profile?.id ?? null,
+        display_label: action === 'label' ? (label?.display_label ?? null) : null,
+        attendee_id: action === 'label' ? (label?.attendee_id ?? null) : null,
         expected_revision: data.current_revision,
         reviewer_name: reviewerName.trim(),
         reviewer_role: reviewerRole.trim() || 'Reviewer',
@@ -590,9 +835,11 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
           ? `confirmed as ${profile?.person_name}`
           : action === 'correct'
             ? `corrected to ${profile?.person_name}`
-            : action === 'reject'
-              ? 'returned to anonymous'
-              : 'recorded as not identified';
+            : action === 'label'
+              ? `assigned the name ${label?.name}`
+              : action === 'reject'
+                ? 'returned to anonymous'
+                : 'recorded as not identified';
       showToast('Speaker decision recorded', `${cluster.display_label} ${verb}.`);
       onAttributionChanged?.();
     } catch (err: any) {
@@ -605,7 +852,12 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
     }
   };
 
-  const handleDecide = (cluster: SpeakerCluster, action: SpeakerDecisionAction, profile?: VoiceProfile) => {
+  const handleDecide = (
+    cluster: SpeakerCluster,
+    action: SpeakerDecisionAction,
+    profile?: VoiceProfile,
+    label?: LabelChoice
+  ) => {
     if (!reviewerName.trim()) {
       setReviewerHint('Enter your name first: every decision is recorded with the reviewer who made it.');
       nameInputRef.current?.focus();
@@ -627,7 +879,7 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
         return;
       }
     }
-    submitDecision(cluster, action, profile);
+    submitDecision(cluster, action, profile, label);
   };
 
   const handleRematch = async () => {
@@ -667,8 +919,9 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
               The system groups turns by voice and may ask whether a group is an enrolled person. Only
-              your explicit confirmation puts a name on the document, and only on turns long enough to
-              attribute; the rest stay as Speaker N. Listen before you decide.
+              your explicit confirmation, or a name you assign from the attendee list or by hand, puts a
+              name on the document, and only on turns long enough to attribute; the rest stay as
+              Speaker N. Listen before you decide.
             </p>
             {counts && (
               <p className="text-[11px] font-semibold text-slate-500 tabular-nums">

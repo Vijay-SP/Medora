@@ -7,10 +7,16 @@ becomes confirmed/corrected exclusively through POST .../{cluster_id}/confirm, b
 audited in the speaker map, and refused (409) whenever the cluster's own diagnostics say it cannot be trusted
 in bulk. Names never reach segment.speaker (the anonymous label the LLM sees) and never reach a segment with
 less than SPEAKER_MIN_PRINTABLE_SPEECH_S of speech (printable_name / display_speaker).
+
+Besides confirming an enrolled voiceprint match, a reviewer may assign a LABEL to a cluster (action "label"):
+a meeting attendee or guest picked from the roster, or a typed name. It is stored as a correction with no
+Person behind it (attribution_basis "reviewer_label") and follows exactly the same printable floor, evidence
+and owner rules as a confirmed name; no voiceprint is created.
 """
 
+import re
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, get_args
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, status
@@ -32,7 +38,15 @@ from app.storage.repository import repository
 router = APIRouter(prefix="/meetings/{meeting_id}/speakers", tags=["Speaker Attribution"])
 
 MAX_SAMPLE_TURNS = 5
-ConfirmAction = Literal["confirm", "correct", "reject", "unknown"]
+ConfirmAction = Literal["confirm", "correct", "reject", "unknown", "label"]
+# Reviewer labels must be real names: an anonymous cluster label ("Speaker 3") or a prose token ("S3") assigned
+# as a "name" would print as an identity while meaning nothing.
+LABEL_MIN_CHARS = 2
+LABEL_MAX_CHARS = 60
+RESERVED_LABEL_PATTERN = re.compile(r"^(Speaker \d+|S\d+)$", re.IGNORECASE)
+# Audit actions the SpeakerAttributionEvent model accepts; a label decision is recorded as "label" once the
+# model lists it and as a "correct" otherwise (the event still carries person_id None + the label snapshot).
+_EVENT_ACTIONS: tuple[str, ...] = get_args(SpeakerAttributionEvent.model_fields["action"].annotation)
 
 
 # ---------------------------------------------------------------- API models
@@ -42,6 +56,14 @@ class ClusterSampleTurn(BaseModel):
     end: float
     text: str
     speech_seconds: float
+
+
+class LabelOption(BaseModel):
+    """A meeting attendee or guest the reviewer may assign to a cluster as its printed name (no voiceprint involved)."""
+    id: str
+    name: str
+    role: str
+    is_guest: bool
 
 
 class SpeakerCluster(BaseModel):
@@ -57,6 +79,8 @@ class SpeakerCluster(BaseModel):
     confirmed_profile_id: Optional[str] = None
     confirmed_name: Optional[str] = None
     confirmed_for_revision: Optional[int] = None
+    current_label: Optional[str] = Field(None, description="Reviewer-assigned label when the cluster's name has no voiceprint behind it")
+    label_options: list[LabelOption] = Field(default_factory=list, description="Meeting attendees and guests offered for action 'label'")
     sample_turns: list[ClusterSampleTurn] = Field(
         default_factory=list, description="The LOWEST-scoring turns against the candidate/confirmed voiceprint, never the longest"
     )
@@ -79,6 +103,9 @@ class SpeakersResponse(BaseModel):
 class SpeakerDecisionRequest(BaseModel):
     action: ConfirmAction
     profile_id: Optional[str] = None
+    # action "label": a typed name, or the id of a meeting attendee/guest whose name becomes the label
+    display_label: Optional[str] = Field(None, description=f"Typed label, {LABEL_MIN_CHARS}-{LABEL_MAX_CHARS} chars, not an anonymous label")
+    attendee_id: Optional[str] = Field(None, description="Meeting.attendees[].id (roster people and client-side guests)")
     expected_revision: int
     reviewer_name: str = Field(..., min_length=1, max_length=200)
     reviewer_role: str = "Reviewer"
@@ -121,6 +148,7 @@ class _Context:
         if self.cache is not None:
             self.row_index = {seg_id: i for i, seg_id in enumerate(self.cache[1].get("segment_ids", []))}
         self._grouped = self._group_segments()
+        self.label_options = build_label_options(self.meeting)
 
     # -- lookups
     def _group_segments(self) -> dict[str, list[TranscriptSegment]]:
@@ -232,6 +260,11 @@ class _Context:
         confirmed_id = next((seg.speaker_id for seg in segs if seg.speaker_id), None)
         confirmed_name = next((seg.confirmed_display_name for seg in segs if seg.confirmed_display_name), None)
         confirmed_rev = next((seg.confirmed_for_revision for seg in segs if seg.confirmed_for_revision is not None), None)
+        current_label = next(
+            (seg.confirmed_display_name for seg in segs
+             if seg.attribution_state == "corrected" and seg.attribution_basis == "reviewer_label" and seg.confirmed_display_name),
+            None,
+        )
 
         # Reference for turn sampling: confirmed person's voiceprint, else the candidate's, else the cluster's own centroid
         reference: Optional[np.ndarray] = None
@@ -286,6 +319,8 @@ class _Context:
             confirmed_profile_id=confirmed_id,
             confirmed_name=confirmed_name,
             confirmed_for_revision=confirmed_rev,
+            current_label=current_label,
+            label_options=self.label_options,
             sample_turns=sample_turns,
             sampled_seconds=round(sum(t.end - t.start for t in sample_turns), 2),
             printable_turns=printable,
@@ -309,6 +344,49 @@ class _Context:
         )
 
 
+# ---------------------------------------------------------------- label helpers
+def build_label_options(meeting: Meeting) -> list[LabelOption]:
+    """Every meeting attendee as a label candidate; guests are the client-side entries with no Person record."""
+    return [
+        LabelOption(
+            id=att.id, name=att.name, role=att.role,
+            is_guest=att.id.startswith("guest_") or "guest" in (att.role or "").lower(),
+        )
+        for att in meeting.attendees
+    ]
+
+
+def validate_label(candidate: Optional[str]) -> str:
+    """The trimmed label, or HTTP 400 when it is empty, too short/long, or an anonymous label in disguise."""
+    label = (candidate or "").strip()
+    if not (LABEL_MIN_CHARS <= len(label) <= LABEL_MAX_CHARS):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"display_label must be {LABEL_MIN_CHARS}-{LABEL_MAX_CHARS} characters after trimming",
+        )
+    if RESERVED_LABEL_PATTERN.match(label):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{label}' is an anonymous speaker label, not a name; type the person's name or pick an attendee",
+        )
+    return label
+
+
+def resolve_label(payload: SpeakerDecisionRequest, meeting: Meeting) -> str:
+    """
+    The name action 'label' will put on the cluster: an attendee/guest of the meeting when attendee_id is given
+    (the roster is the only source of that name), otherwise the typed display_label. Validated either way.
+    """
+    if payload.attendee_id:
+        attendee = next((att for att in meeting.attendees if att.id == payload.attendee_id), None)
+        if attendee is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attendee not found on this meeting")
+        return validate_label(attendee.name)
+    if payload.display_label is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="action 'label' requires display_label or attendee_id")
+    return validate_label(payload.display_label)
+
+
 # ---------------------------------------------------------------- write helpers
 def _set_suggestion(segs: list[TranscriptSegment], pick: Optional[Candidate], space_id: str) -> None:
     """Suggestion or anonymity on every segment of an unconfirmed cluster; never touches confirmed ones."""
@@ -329,17 +407,29 @@ def _set_suggestion(segs: list[TranscriptSegment], pick: Optional[Candidate], sp
 
 
 def _apply_decision_to_segments(
-    segs: list[TranscriptSegment], action: ConfirmAction, person: Optional[Person], reviewer: str, now: datetime, revision: int
+    segs: list[TranscriptSegment], action: ConfirmAction, person: Optional[Person], reviewer: str, now: datetime, revision: int,
+    label: Optional[str] = None,
 ) -> None:
-    """Writes the attribution state; printable_name is derived from speech_seconds exactly as V3 defines it."""
+    """
+    Writes the attribution state; printable_name is derived from speech_seconds exactly as V3 defines it.
+    A confirmed person and a reviewer label take the same path: the only difference is what stands behind the
+    name (speaker_id + basis 'voiceprint' vs. no Person + basis 'reviewer_label'). reject/unknown clear both.
+    """
     min_printable = settings.SPEAKER_MIN_PRINTABLE_SPEECH_S
+    if action in ("confirm", "correct") and person is not None:
+        name, person_id, basis = person.full_name, person.id, "voiceprint"
+    elif action == "label" and label:
+        name, person_id, basis = label, None, "reviewer_label"
+    else:
+        name = None
     for seg in segs:
         seg.suggestion = None
         seg.suggested_identity = None
-        if action in ("confirm", "correct") and person is not None:
+        if name is not None:
             seg.attribution_state = "confirmed" if action == "confirm" else "corrected"
-            seg.speaker_id = person.id
-            seg.confirmed_display_name = person.full_name
+            seg.speaker_id = person_id
+            seg.attribution_basis = basis
+            seg.confirmed_display_name = name
             seg.confirmed_by = reviewer
             seg.confirmed_at = now
             seg.confirmed_for_revision = revision
@@ -347,6 +437,7 @@ def _apply_decision_to_segments(
         else:
             seg.attribution_state = "anonymous"
             seg.speaker_id = None
+            seg.attribution_basis = "voiceprint"
             seg.confirmed_display_name = None
             seg.confirmed_by = None
             seg.confirmed_at = None
@@ -360,7 +451,8 @@ def _apply_attribution_to_minutes(
     """
     Evidence quotes carry the confirmed name only for printable segments; action items owned by this cluster's
     anonymous label become owned by the confirmed name only when every evidence segment is printable and in the
-    cluster. Rejecting reverses both. Free text (summaries, decisions) is never touched: names do not belong there.
+    cluster. Rejecting reverses both. Free text (summaries, decisions) is never touched: stored prose carries
+    anonymous S<n> tokens at most, and the render layer resolves them from the transcript at read time.
 
     An action item belongs to this decision only through its EVIDENCE: every cited segment must lie in this
     cluster. Neither the owner name nor the label identifies the cluster (the same person may be confirmed on
@@ -468,8 +560,9 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
     """
     The single human decision point for speaker identity on a cluster.
     confirm/correct put the person's SNAPSHOT name on the cluster's segments (printable only above the speech
-    floor); reject/unknown return them to anonymous. Bound to the meeting revision and refused while the
-    cluster's diagnostics block bulk confirmation.
+    floor); label puts a reviewer-chosen name (typed, or a meeting attendee/guest) on them the same way without
+    any Person record; reject/unknown return them to anonymous, clearing a label too. Bound to the meeting
+    revision and refused while the cluster's diagnostics block bulk attribution.
     """
     if payload.action in ("confirm", "correct") and not payload.profile_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"action '{payload.action}' requires profile_id")
@@ -479,16 +572,18 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
         segs = grouped.get(cluster_id)
         if not segs:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Cluster {cluster_id} not found on this meeting")
+        label: Optional[str] = resolve_label(payload, ctx.meeting) if payload.action == "label" else None
         if payload.expected_revision != ctx.meeting.current_revision:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Revision conflict: you reviewed Rev.{payload.expected_revision} but the meeting is at Rev.{ctx.meeting.current_revision}. Reload before deciding.",
             )
         person: Optional[Person] = None
-        if payload.action in ("confirm", "correct"):
+        if payload.action in ("confirm", "correct", "label"):
             blockers = ctx.blocking_reasons(cluster_id, segs)
             if blockers:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="; ".join(blockers))
+        if payload.action in ("confirm", "correct"):
             person = repository.get_person(payload.profile_id)
             if not person or not person.is_active:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Voice profile not found")
@@ -513,12 +608,13 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
         if minutes is not None:
             _bump_revision_if_signed_off(ctx.meeting, minutes)
 
-        _apply_decision_to_segments(segs, payload.action, person, reviewer, now, ctx.meeting.current_revision)
+        _apply_decision_to_segments(segs, payload.action, person, reviewer, now, ctx.meeting.current_revision, label=label)
         repository.save_transcript(ctx.transcript)
 
         speaker_map = repository.get_speaker_map(meeting_id) or SpeakerMap(meeting_id=meeting_id, space_id=ctx.space_id)
         speaker_map.space_id = speaker_map.space_id or ctx.space_id
-        # reject records WHO was turned down (the prior suggestion or confirmation) so re-matching never asks again
+        # reject records WHO was turned down (the prior suggestion or confirmation) so re-matching never asks again;
+        # a label records the assigned name with no person behind it
         turned_down_id = None
         turned_down_name = None
         if payload.action == "reject":
@@ -527,9 +623,9 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
         speaker_map.events.append(SpeakerAttributionEvent(
             meeting_id=meeting_id,
             cluster_id=cluster_id,
-            action=payload.action,
+            action=payload.action if payload.action in _EVENT_ACTIONS else "correct",
             person_id=person.id if person else turned_down_id,
-            person_name_snapshot=person.full_name if person else turned_down_name,
+            person_name_snapshot=person.full_name if person else (label or turned_down_name),
             score_at_decision=prior_suggestion.score if prior_suggestion else None,
             margin_at_decision=prior_suggestion.margin if prior_suggestion else None,
             space_id=prior_suggestion.space_id if prior_suggestion else ctx.space_id,
@@ -552,9 +648,10 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
             person.updated_at = now
             repository.save_person(person)
         repository.save_meeting(ctx.meeting)
+        assigned = person.full_name if person else label
         logger.info(
             f"Speaker decision on meeting {meeting_id} cluster {cluster_id}: {payload.action} "
-            f"{'-> ' + person.full_name if person else ''} by {reviewer} at Rev.{ctx.meeting.current_revision} "
+            f"{'-> ' + assigned if assigned else ''} by {reviewer} at Rev.{ctx.meeting.current_revision} "
             f"({sum(1 for s in segs if s.printable_name)}/{len(segs)} turns printable)"
         )
         refreshed = _Context(meeting_id)

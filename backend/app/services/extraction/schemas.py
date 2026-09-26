@@ -10,6 +10,9 @@ from pydantic import BaseModel, Field
 # Only the JSON Schema subset verified against Ollama 0.34.4 is used here:
 # type, properties, required, enum, items, minItems, maxItems and ["string", "null"].
 _EVIDENCE_IDX = {"type": "array", "items": {"type": "integer"}, "minItems": 1, "maxItems": 3}
+# Speaker labels the item attributes ("S3"), exactly as they appear in the fragment; grounded by
+# validator.ground_speaker_labels against the cited lines after the merge
+_SPEAKERS = {"type": "array", "items": {"type": "string"}, "maxItems": 3}
 
 MAP_SCHEMA: dict = {
     "type": "object",
@@ -23,9 +26,10 @@ MAP_SCHEMA: dict = {
                     "topic": {"type": "string"},
                     "decision": {"type": "string"},
                     "category": {"type": "string", "enum": ["clinical", "budget", "operations", "protocol"]},
+                    "speakers": _SPEAKERS,
                     "evidence_idx": _EVIDENCE_IDX,
                 },
-                "required": ["topic", "decision", "category", "evidence_idx"],
+                "required": ["topic", "decision", "category", "speakers", "evidence_idx"],
             },
         },
         "action_items": {
@@ -39,9 +43,10 @@ MAP_SCHEMA: dict = {
                     "owner_speaker": {"type": ["string", "null"]},
                     "deadline_phrase": {"type": ["string", "null"]},
                     "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "speakers": _SPEAKERS,
                     "evidence_idx": _EVIDENCE_IDX,
                 },
-                "required": ["task", "owner_mention", "owner_speaker", "deadline_phrase", "priority", "evidence_idx"],
+                "required": ["task", "owner_mention", "owner_speaker", "deadline_phrase", "priority", "speakers", "evidence_idx"],
             },
         },
         "risks_and_questions": {
@@ -53,9 +58,10 @@ MAP_SCHEMA: dict = {
                     "item_type": {"type": "string", "enum": ["risk", "unresolved_question"]},
                     "description": {"type": "string"},
                     "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "speakers": _SPEAKERS,
                     "evidence_idx": _EVIDENCE_IDX,
                 },
-                "required": ["item_type", "description", "severity", "evidence_idx"],
+                "required": ["item_type", "description", "severity", "speakers", "evidence_idx"],
             },
         },
     },
@@ -75,10 +81,11 @@ SYNTHESIS_SCHEMA: dict = {
 
 
 class MapDecision(BaseModel):
-    """One decision as emitted by a map call; evidence is a list of transcript line indices."""
+    """One decision as emitted by a map call; speakers are the attributed labels, evidence the cited line indices."""
     topic: str
     decision: str
     category: Literal["clinical", "budget", "operations", "protocol"]
+    speakers: list[str] = Field(default_factory=list, max_length=3)
     evidence_idx: list[int] = Field(..., min_length=1, max_length=3)
 
 
@@ -89,6 +96,7 @@ class MapAction(BaseModel):
     owner_speaker: Optional[str] = None
     deadline_phrase: Optional[str] = None
     priority: Literal["high", "medium", "low"]
+    speakers: list[str] = Field(default_factory=list, max_length=3)
     evidence_idx: list[int] = Field(..., min_length=1, max_length=3)
 
 
@@ -97,6 +105,7 @@ class MapRisk(BaseModel):
     item_type: Literal["risk", "unresolved_question"]
     description: str
     severity: Literal["high", "medium", "low"]
+    speakers: list[str] = Field(default_factory=list, max_length=3)
     evidence_idx: list[int] = Field(..., min_length=1, max_length=3)
 
 

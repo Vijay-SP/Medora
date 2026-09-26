@@ -6,6 +6,9 @@ Speaker attribution is a four-state machine enforced by Pydantic invariants (ano
 confirmed/corrected). `speaker` is ALWAYS the anonymous cluster label ("Speaker N") so the LLM prompt and
 every persisted consumer keep seeing anonymous text; a person's name lives only in `confirmed_display_name`
 and is exposed through `display_speaker`, which prints it only when the segment carries enough speech.
+A name gets there in one of two ways (`attribution_basis`): a reviewer confirming an enrolled voiceprint
+match (speaker_id = Person.id) or a reviewer assigning a label / attendee name with no Person record
+(state "corrected", speaker_id None). Both are human decisions; neither is ever inferred.
 """
 
 from datetime import datetime
@@ -21,6 +24,9 @@ DEFAULT_ANONYMOUS_SPEAKER = "Speaker 1"
 
 AttributionState = Literal["anonymous", "suggested", "confirmed", "corrected"]
 MatchBand = Literal["strong", "moderate", "weak", "no_match"]
+# What a confirmed/corrected name rests on: an enrolled voiceprint (speaker_id points at the Person) or a
+# reviewer-typed / attendee-picked label with no Person record behind it (speaker_id stays None).
+AttributionBasis = Literal["voiceprint", "reviewer_label"]
 
 # Language identification provenance for a segment (code-switching ASR, see docs/ASR_CODE_SWITCHING.md).
 # "legacy" = persisted before per-window LID existed (the language was stamped by a single whole-file pass).
@@ -100,6 +106,10 @@ class TranscriptSegment(BaseModel):
     confirmed_at: Optional[datetime] = None
     confirmed_for_revision: Optional[int] = Field(None, description="Meeting revision the confirmation was made against")
     suggestion: Optional[SpeakerSuggestion] = None
+    attribution_basis: AttributionBasis = Field(
+        default="voiceprint",
+        description="'reviewer_label' when the corrected name is a reviewer-assigned label without a Person record"
+    )
     speech_seconds: Optional[float] = Field(None, description="VAD speech inside the segment, set by the diarizer")
     printable_name: bool = Field(
         default=False,
@@ -144,8 +154,14 @@ class TranscriptSegment(BaseModel):
             raise ValueError(f"speaker must be an anonymous label matching 'Speaker N', got {self.speaker!r}")
         state = self.attribution_state
         if state in ("confirmed", "corrected"):
-            if not self.speaker_id or not self.confirmed_display_name:
-                raise ValueError(f"attribution_state={state!r} requires speaker_id and confirmed_display_name")
+            if not self.confirmed_display_name:
+                raise ValueError(f"attribution_state={state!r} requires confirmed_display_name")
+            if self.attribution_basis == "reviewer_label":
+                # A reviewer label is always a correction and never points at an enrolled Person
+                if state != "corrected" or self.speaker_id is not None:
+                    raise ValueError("attribution_basis='reviewer_label' requires attribution_state='corrected' and no speaker_id")
+            elif not self.speaker_id:
+                raise ValueError(f"attribution_state={state!r} requires speaker_id (or a reviewer label as attribution_basis)")
         else:
             if self.speaker_id is not None or self.confirmed_display_name is not None or self.confirmed_by is not None:
                 raise ValueError(

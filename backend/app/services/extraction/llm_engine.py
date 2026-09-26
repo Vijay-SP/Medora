@@ -35,7 +35,14 @@ from app.services.extraction.prompt_templates import (
     SYNTHESIS_REPAIR_TEMPLATE,
 )
 from app.services.extraction.schemas import MAP_SCHEMA, SYNTHESIS_SCHEMA, MapResult, SynthesisResult
-from app.services.extraction.validator import evidence_validator, resolve_owner, audit_free_prose
+from app.services.extraction.validator import (
+    evidence_validator,
+    resolve_owner,
+    audit_free_prose,
+    audit_person_names,
+    ground_speaker_labels,
+    normalise_text,
+)
 
 
 HEURISTIC_FALLBACK_PROVENANCE = "heuristic-fallback"
@@ -54,8 +61,10 @@ def _mmss(seconds: float) -> str:
 class LocalLLMExtractor(BaseExtractor):
     """
     Map/reduce extractor over the compact indexed transcript: sequential map calls per chunk with
-    grammar-constrained JSON, deterministic merge in Python, one synthesis call for the summaries,
-    evidence copied verbatim from the cited segments, then grounding validation and a prose audit.
+    grammar-constrained JSON, deterministic merge in Python, speaker-label grounding against the cited
+    lines, one synthesis call for the summaries, evidence copied verbatim from the cited segments, then
+    grounding validation and a prose audit. Prose attributes to anonymous labels ("S3 a propus ...");
+    attribution_render resolves them at read time.
 
     `client` may be overridden (tests inject a fake with assert_ready/complete_json/unload);
     None means the module-level Ollama singleton.
@@ -183,11 +192,23 @@ class LocalLLMExtractor(BaseExtractor):
             summary_ro="",
             model_version=provenance,
             failed_chunks=failed_chunks,
+            speaker_label_style="labels",
         )
 
-        # Owner resolution happens ONCE on the merged dicts, before anything else reads them: the structured
-        # ActionItem and the synthesis prompt must both see the enforced label, never the raw owner_mention
-        # (a fabricated mention that resolve_owner discarded must not resurface in the summaries).
+        # Label grounding happens ONCE on the merged dicts, before anything else reads them: a label the
+        # model did not see in the cited lines (an "S9" in a four-speaker meeting) is replaced by the cited
+        # label with the most speech, so neither the structured item nor the synthesis prompt ever carries it.
+        label_repairs = 0
+        for items, text_key in ((merged_decisions, "decision"), (merged_actions, "task"), (merged_risks, "description")):
+            for item in items:
+                cited = [segments[i] for i in item["evidence_idx"]]
+                item[text_key], item["speakers"], repaired = ground_speaker_labels(item.get(text_key), item.get("speakers"), cited)
+                if repaired:
+                    label_repairs += 1
+                    logger.warning(f"Speaker label repaired in {text_key}: {item[text_key][:80]!r} -> speakers {item['speakers']}")
+
+        # Owner resolution likewise runs on the merged dicts: the structured ActionItem must see the enforced
+        # owner, never the raw owner_mention (a fabricated mention that resolve_owner discarded must not resurface).
         for a in merged_actions:
             cited = [segments[i] for i in a["evidence_idx"]]
             a["owner"], a["owner_source"] = resolve_owner(a.get("owner_mention"), a.get("owner_speaker"), cited, meeting.attendees)
@@ -227,12 +248,34 @@ class LocalLLMExtractor(BaseExtractor):
 
         # Synthesis: summaries and agenda from the merged items only (never the transcript)
         synthesis_note = await self._synthesise(minutes, merged_decisions, merged_actions, merged_risks, meeting_type, stats)
+        summary_repaired = self._ground_summary_labels(minutes, segments)
 
         # Prose audit over the LLM-authored text ONLY: it runs before any engine- or validator-authored note
         # ("NOTĂ AUDIT", "[NEVERIFICAT AUDIO]") is appended, so the engine can never flag its own vocabulary.
         suspects = audit_free_prose(minutes, transcript, meeting)
+        # Labelled prose may name people only through S<n> tokens: a name copied from the transcript ("doctorul
+        # Popescu") passes audit_free_prose (it WAS spoken) but would print inline as if confirmed.
+        person_names = audit_person_names(minutes, transcript, meeting)
+        person_keys = [normalise_text(name) for name in person_names]
+        suspects = [s for s in suspects if not any(key in normalise_text(s) or normalise_text(s) in key for key in person_keys)]
 
         engine_notes: list[RiskOrQuestionItem] = []
+        if label_repairs or summary_repaired:
+            minutes.needs_name_review = True
+            scope = f"pentru {label_repairs} element(e)" if label_repairs else "în rezumat"
+            if label_repairs and summary_repaired:
+                scope += " și în rezumat"
+            logger.warning(f"Speaker attribution repaired automatically ({scope}); minutes flagged for name review")
+            engine_notes.append(
+                RiskOrQuestionItem(
+                    item_type="unresolved_question",
+                    description=(
+                        f"NOTĂ AUDIT: atribuirea vorbitorilor a fost corectată automat {scope}; "
+                        "verificați etichetele vorbitorilor înainte de aprobare."
+                    ),
+                    severity="medium",
+                )
+            )
         if failed_chunks:
             intervals = ", ".join(self._chunk_interval(chunks[o], segments) for o in failed_chunks)
             engine_notes.append(
@@ -256,6 +299,20 @@ class LocalLLMExtractor(BaseExtractor):
                     description=(
                         "NOTĂ AUDIT: Următoarele nume/termeni din text nu au fost regăsite în transcriere și necesită "
                         f"confirmare umană: {'; '.join(suspects)}."
+                    ),
+                    severity="high",
+                )
+            )
+        if person_names:
+            logger.warning(f"Labelled prose names {len(person_names)} person(s) outside the speaker labels: {person_names}")
+            minutes.needs_name_review = True
+            engine_notes.append(
+                RiskOrQuestionItem(
+                    item_type="unresolved_question",
+                    description=(
+                        "NOTĂ AUDIT: Textul procesului-verbal numește persoane în afara etichetelor vorbitorilor; un nume apare "
+                        "doar după confirmarea vorbitorului. Înlocuiți cu eticheta corespunzătoare înainte de aprobare: "
+                        f"{'; '.join(person_names)}."
                     ),
                     severity="high",
                 )
@@ -377,20 +434,23 @@ class LocalLLMExtractor(BaseExtractor):
             minutes.agenda_topics = []
             return None
 
+        # Each item carries its grounded speaker labels so the narrative can attribute ("S3 a propus, S1 a aprobat").
+        # No owner name reaches this prompt: a roster/mention owner lives only on the structured ActionItem.
+        def _labels(item: dict) -> str:
+            return ", ".join(item.get("speakers") or []) or "-"
+
         block_lines: list[str] = []
         if decisions:
             block_lines.append("DECIZII:")
-            block_lines.extend(f"- [{min(d['evidence_idx'])}] ({d['category']}) {d['topic']}: {d['decision']}" for d in decisions)
+            block_lines.extend(f"- [D] ({_labels(d)}) {d['topic']}: {d['decision']}" for d in decisions)
         if actions:
             block_lines.append("SARCINI:")
             for a in actions:
-                # The label resolve_owner enforced (roster name / verified mention / Speaker N), never the raw mention
-                owner = a["owner"] if a["owner_source"] != "unassigned" else "neatribuit"
                 deadline = a.get("deadline_phrase") or "fără termen"
-                block_lines.append(f"- [{min(a['evidence_idx'])}] ({a['priority']}) {a['task']} (responsabil: {owner}; termen: {deadline})")
+                block_lines.append(f"- [A] ({_labels(a)}) {a['task']} — termen: {deadline}; prioritate: {a['priority']}")
         if risks:
             block_lines.append("RISCURI / ÎNTREBĂRI:")
-            block_lines.extend(f"- [{min(r['evidence_idx'])}] ({r['item_type']}, {r['severity']}) {r['description']}" for r in risks)
+            block_lines.extend(f"- [R] ({_labels(r)}) {r['description']} ({r['item_type']}, {r['severity']})" for r in risks)
 
         system = SYNTHESIS_SYSTEM_PROMPT.format(meeting_type=meeting_type)
         user = SYNTHESIS_USER_PROMPT_TEMPLATE.format(items_block="\n".join(block_lines))
@@ -437,6 +497,30 @@ class LocalLLMExtractor(BaseExtractor):
         )
 
     # ------------------------------------------------------------------ helpers
+
+    @staticmethod
+    def _ground_summary_labels(minutes: MinutesOfMeeting, segments: list[TranscriptSegment]) -> bool:
+        """
+        The summaries and agenda may only name labels that exist in the transcript; any other S<digits>
+        token is replaced by the transcript's most-speaking label (the whole transcript plays the role of
+        the cited lines). Returns True when something was repaired.
+        """
+        repaired = False
+        minutes.summary_ro, _, fixed = ground_speaker_labels(minutes.summary_ro, None, segments)
+        repaired |= fixed
+        minutes.summary_ru, _, fixed = ground_speaker_labels(minutes.summary_ru, None, segments)
+        repaired |= fixed
+        minutes.summary_en, _, fixed = ground_speaker_labels(minutes.summary_en, None, segments)
+        repaired |= fixed
+        topics: list[str] = []
+        for topic in minutes.agenda_topics:
+            grounded, _, fixed = ground_speaker_labels(topic, None, segments)
+            repaired |= fixed
+            topics.append(grounded or "")
+        minutes.agenda_topics = topics
+        if repaired:
+            logger.warning("Speaker label(s) unknown to the transcript were repaired in the summary/agenda")
+        return repaired
 
     @staticmethod
     def _accumulate(stats: dict[str, Any], call_stats: dict) -> None:

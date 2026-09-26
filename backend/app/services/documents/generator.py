@@ -18,6 +18,7 @@ from app.core.logging import logger
 from app.models.meeting import Meeting
 from app.models.extraction import ActionItem, EvidenceQuote, MinutesOfMeeting
 from app.models.transcript import Transcript, TranscriptSegment
+from app.services.extraction.attribution_render import render_minutes
 from app.storage.repository import repository
 
 # Audit banners rendered in both document formats (Romanian, as read by the clinical reviewer)
@@ -171,6 +172,25 @@ def render_action_owner(action: ActionItem, segment_index: dict[str, TranscriptS
     return localize_speaker_label(action.owner) or UNASSIGNED_OWNER
 
 
+def render_minutes_for_reader(minutes: MinutesOfMeeting, transcript: Transcript) -> MinutesOfMeeting:
+    """
+    The minutes as a reader sees them (API responses and the PDF/DOCX): speaker tokens in the PROSE resolve at
+    cluster level through render_minutes, while every action owner and evidence speaker keeps its STORED value.
+    Those are maintained per segment by the speaker decisions (a name only where every cited segment is
+    confirmed/corrected AND printable); resolving them through the cluster map would print a name for a turn
+    below the printable floor. Returns a copy; the stored minutes are never modified.
+    """
+    shown = render_minutes(minutes, transcript)
+    stored_items = [*minutes.decisions, *minutes.action_items, *minutes.risks_and_questions]
+    shown_items = [*shown.decisions, *shown.action_items, *shown.risks_and_questions]
+    for shown_item, stored_item in zip(shown_items, stored_items):
+        for shown_quote, stored_quote in zip(shown_item.evidence, stored_item.evidence):
+            shown_quote.speaker = stored_quote.speaker
+    for shown_action, stored_action in zip(shown.action_items, minutes.action_items):
+        shown_action.owner = stored_action.owner
+    return shown
+
+
 def format_evidence_line(evidence: EvidenceQuote, segment_index: dict[str, TranscriptSegment], limit: int) -> str:
     """'[10s-15s] Vorbitor 2: "quote"' with the speaker part omitted when no label may be printed."""
     speaker = render_evidence_speaker(evidence, segment_index)
@@ -276,6 +296,15 @@ class DocumentGenerator:
             logger.warning(f"Transcript of meeting {meeting.id} unavailable for document rendering, printing anonymous labels: {exc}")
             return None
 
+    def _render_for_print(self, meeting: Meeting, minutes: MinutesOfMeeting, transcript: Optional[Transcript]) -> MinutesOfMeeting:
+        """
+        A rendered COPY of the minutes for the page: speaker tokens in the prose become the confirmed/labelled
+        name where the transcript allows it and the anonymous localized form everywhere else; owners and evidence
+        speakers keep the stored per-segment values (render_action_owner / render_evidence_speaker re-check them).
+        Without a transcript every token renders anonymous. The stored minutes are never modified by document generation.
+        """
+        return render_minutes_for_reader(minutes, transcript or Transcript(meeting_id=meeting.id))
+
     def generate_all(
         self,
         meeting: Meeting,
@@ -300,6 +329,7 @@ class DocumentGenerator:
         """Constructs formatted Word document (.docx) with tables and metadata."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         transcript = self._load_transcript(meeting, transcript)
+        minutes = self._render_for_print(meeting, minutes, transcript)
         segment_index = build_segment_index(transcript)
         legend = build_attribution_legend(transcript)
         doc = Document()
@@ -428,6 +458,7 @@ class DocumentGenerator:
         """Constructs official PDF document using FPDF."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
         transcript = self._load_transcript(meeting, transcript)
+        minutes = self._render_for_print(meeting, minutes, transcript)
         segment_index = build_segment_index(transcript)
         legend = build_attribution_legend(transcript)
         pdf = PDFReport()

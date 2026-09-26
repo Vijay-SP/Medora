@@ -84,6 +84,13 @@ class MinutesOfMeeting(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_version: str = Field(default="medpark-qwen-local")
     revision: int = 1
+    # How the stored prose names people: "impersonal" (pre-label extractions, no speaker tokens) or "labels"
+    # (texts attribute to anonymous S<n> tokens that the render layer resolves per reader). Stored text never
+    # carries a person's name either way; a name appears only when a reviewer attributed the cluster.
+    speaker_label_style: Literal["impersonal", "labels"] = Field(
+        default="impersonal",
+        description="Whether decision/task/summary texts carry anonymous speaker tokens (S1, S2...) to be resolved at render time"
+    )
 
     # Extraction provenance and audit flags (all defaulted so persisted JSON keeps loading)
     is_degraded: bool = Field(default=False, description="Heuristic fallback produced this document; not dispatchable")
