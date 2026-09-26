@@ -52,6 +52,16 @@ class VoiceProfileCreateRequest(BaseModel):
     specialty: Optional[str] = None
 
 
+class VoiceProfileUpdateRequest(BaseModel):
+    person_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    role: Optional[str] = None
+    email: Optional[str] = None
+    department: Optional[str] = None
+    title: Optional[str] = None
+    primary_language: Optional[str] = None
+    specialty: Optional[str] = None
+
+
 class ConsentRequest(BaseModel):
     granted: bool
 
@@ -193,6 +203,31 @@ def create_voice_profile(payload: VoiceProfileCreateRequest) -> PersonSummary:
 def get_voice_profile(person_id: str) -> PersonSummary:
     """Returns one person's enrollment summary."""
     return _summary(_get_person_or_404(person_id))
+
+
+@router.put("/{person_id}", response_model=PersonSummary)
+@router.patch("/{person_id}", response_model=PersonSummary)
+def update_voice_profile(person_id: str, payload: VoiceProfileUpdateRequest) -> PersonSummary:
+    """Updates person metadata without altering existing voiceprints or biometric consent."""
+    person = _get_person_or_404(person_id)
+    if payload.person_name is not None:
+        person.full_name = payload.person_name.strip()
+    if payload.role is not None:
+        person.role = payload.role.strip() or "Member"
+    if payload.email is not None:
+        person.email = payload.email.strip()
+    if payload.department is not None:
+        person.department = payload.department.strip() or None
+    if payload.title is not None:
+        person.title = payload.title.strip() or None
+    if payload.primary_language is not None:
+        person.primary_language = payload.primary_language.strip() or "ro"
+    if payload.specialty is not None:
+        person.specialty = payload.specialty.strip() or None
+    person.updated_at = datetime.now(timezone.utc)
+    repository.save_person(person)
+    logger.info(f"Updated voice profile {person.id} for {person.full_name}")
+    return _summary(person)
 
 
 @router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)

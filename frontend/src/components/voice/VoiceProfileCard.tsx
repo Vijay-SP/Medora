@@ -7,6 +7,7 @@ import {
   ShieldOff,
   Mic,
   Trash2,
+  Pencil,
   AlertTriangle,
   Clock,
   Globe,
@@ -21,6 +22,7 @@ interface VoiceProfileCardProps {
   onWipeSamples: (profile: VoiceProfile) => void;
   onWithdrawConsent: (profile: VoiceProfile) => void;
   onDelete: (profile: VoiceProfile) => void;
+  onEdit?: (profile: VoiceProfile) => void;
 }
 
 type IconComponent = React.FC<{ className?: string }>;
@@ -64,6 +66,7 @@ export const VoiceProfileCard: React.FC<VoiceProfileCardProps> = ({
   onWipeSamples,
   onWithdrawConsent,
   onDelete,
+  onEdit,
 }) => {
   const state = STATE_META[profile.state] ?? STATE_META.not_enrolled;
   const StateIcon = state.Icon;
@@ -209,6 +212,17 @@ export const VoiceProfileCard: React.FC<VoiceProfileCardProps> = ({
         </button>
 
         <div className="flex items-center space-x-1">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(profile)}
+              aria-label={`Edit ${profile.person_name}`}
+              title="Edit person details"
+              className="p-2 text-slate-400 hover:text-medpark-600 hover:bg-medpark-50 rounded-lg border border-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+            >
+              <Pencil className="w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
           {hasSamples && (
             <button
               type="button"

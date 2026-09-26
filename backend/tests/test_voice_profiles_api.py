@@ -285,6 +285,75 @@ def test_enrollment_flow_end_to_end():
         assert client.get(f"{API}/status").json()["enrolled"] == 0
 
 
+def test_update_voice_profile_metadata():
+    _assert_isolated()
+    with _client() as client:
+        # create
+        res = client.post(
+            API + "/",
+            json={
+                "person_name": "Elena Ceban",
+                "role": "Consultant",
+                "email": "elena.ceban@medpark.md",
+                "department": "Cardiology",
+                "title": "Dr.",
+                "primary_language": "ro",
+                "specialty": "Interventional Cardiology",
+            },
+        )
+        assert res.status_code == 201, res.text
+        person = res.json()
+        person_id = person["id"]
+        assert person["person_name"] == "Elena Ceban"
+        assert person["role"] == "Consultant"
+        assert person["department"] == "Cardiology"
+
+        # update metadata via PUT
+        update_res = client.put(
+            f"{API}/{person_id}",
+            json={
+                "person_name": "Prof. Dr. Elena Ceban",
+                "role": "Head of Department",
+                "email": "elena.ceban.head@medpark.md",
+                "department": "Cardiovascular Surgery",
+                "title": "Prof. Dr.",
+                "primary_language": "ru",
+                "specialty": "Advanced Cardiac Surgery",
+            },
+        )
+        assert update_res.status_code == 200, update_res.text
+        updated = update_res.json()
+        _assert_no_vector(updated)
+        assert updated["id"] == person_id
+        assert updated["person_name"] == "Prof. Dr. Elena Ceban"
+        assert updated["role"] == "Head of Department"
+        assert updated["email"] == "elena.ceban.head@medpark.md"
+        assert updated["department"] == "Cardiovascular Surgery"
+        assert updated["title"] == "Prof. Dr."
+        assert updated["primary_language"] == "ru"
+        assert updated["specialty"] == "Advanced Cardiac Surgery"
+
+        # verify persistence via GET
+        get_res = client.get(f"{API}/{person_id}")
+        assert get_res.status_code == 200
+        fetched = get_res.json()
+        assert fetched["person_name"] == "Prof. Dr. Elena Ceban"
+        assert fetched["department"] == "Cardiovascular Surgery"
+        assert fetched["primary_language"] == "ru"
+
+        # partial update via PATCH
+        patch_res = client.patch(
+            f"{API}/{person_id}",
+            json={"role": "Chief Surgeon"},
+        )
+        assert patch_res.status_code == 200
+        assert patch_res.json()["role"] == "Chief Surgeon"
+        assert patch_res.json()["department"] == "Cardiovascular Surgery"
+
+        # 404 on nonexistent person
+        assert client.put(f"{API}/nonexistent-id", json={"person_name": "Nobody"}).status_code == 404
+
+
 def test_no_endpoint_enrolls_from_meeting_audio():
     """Retro-enrollment is refused by design: the only sample route is the explicit prompted upload."""
     from app.main import app

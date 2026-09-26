@@ -381,6 +381,16 @@ export interface VoiceProfileCreate {
   specialty?: string;
 }
 
+export interface VoiceProfileUpdate {
+  person_name?: string;
+  role?: string;
+  email?: string;
+  department?: string;
+  title?: string;
+  primary_language?: string;
+  specialty?: string;
+}
+
 export type SampleVerdict = 'good' | 'usable' | 'reject';
 
 // Returned by POST /voice-profiles/{id}/samples; `reasons` are shown to the user verbatim.
