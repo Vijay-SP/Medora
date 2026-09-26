@@ -564,12 +564,6 @@ export const App: React.FC = () => {
     setReviewStatusFilter('all');
   };
 
-  // Review flags on the loaded revision, surfaced above the workspace so they cannot be missed.
-  const failedChunkCount = minutes?.failed_chunks?.length ?? 0;
-  const showReviewFlags = Boolean(
-    minutes && (minutes.is_degraded || minutes.needs_name_review || failedChunkCount > 0)
-  );
-
   const pendingCount = meetings.filter(
     (m) =>
       m.review_status === 'pending_review' ||
@@ -681,47 +675,6 @@ export const App: React.FC = () => {
             >
               Dismiss
             </button>
-          </div>
-        )}
-
-        {/* Extraction provenance / review flags banner (workspace only) */}
-        {view === 'workspace' && currentPage === 'workspace' && minutes && showReviewFlags && (
-          <div
-            role="alert"
-            className={`m-4 sm:m-6 lg:m-8 mb-0 p-4 rounded-2xl border flex items-start gap-3 shadow-xs ${
-              minutes.is_degraded
-                ? 'bg-rose-50 border-rose-200 text-rose-800'
-                : 'bg-amber-50 border-amber-300 text-amber-900'
-            }`}
-          >
-            <AlertCircle
-              className={`w-5 h-5 flex-shrink-0 ${minutes.is_degraded ? 'text-rose-600' : 'text-amber-700'}`}
-            />
-            <div className="min-w-0 space-y-1 text-xs">
-              <p className="text-[11px] font-bold uppercase tracking-wider">
-                {minutes.is_degraded
-                  ? 'Unvalidated draft - local LLM was unavailable'
-                  : 'Review flags on this revision'}
-              </p>
-              <ul className="list-disc list-inside font-medium leading-relaxed space-y-0.5">
-                {minutes.is_degraded && (
-                  <li>
-                    Produced by the rule-based fallback; sign-off and email dispatch are blocked until
-                    the pipeline is re-run with the local LLM.
-                  </li>
-                )}
-                {minutes.needs_name_review && (
-                  <li>Name review needed: an action owner or proper noun is not on the attendee roster.</li>
-                )}
-                {failedChunkCount > 0 && (
-                  <li>
-                    {failedChunkCount} transcript fragment{failedChunkCount === 1 ? '' : 's'} failed
-                    extraction - see the audit note under Risks &amp; Questions.
-                  </li>
-                )}
-              </ul>
-              <p className="text-[11px] font-mono break-all opacity-80">Model: {minutes.model_version}</p>
-            </div>
           </div>
         )}
 
@@ -838,6 +791,7 @@ export const App: React.FC = () => {
               onSaveSummary={handleSaveSummary}
               onUpdateSegment={handleUpdateSegment}
               onSeekAudio={handleSeekAudio}
+              onMinutesUpdated={(updated) => setMinutes(updated)}
             />
           )}
 

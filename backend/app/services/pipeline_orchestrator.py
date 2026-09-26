@@ -253,7 +253,7 @@ class PipelineOrchestrator:
                 # so the VRAM is free for the next meeting's ASR)
                 meeting.processing_status = ProcessingStatus.EXTRACTING
                 meeting.processing_progress = 75
-                meeting.current_stage_detail = "Extragere decizii, acțiuni și verificare dovezi audio..."
+                meeting.current_stage_detail = "Extragere decizii, acțiuni și traducere multilingvă (RO, RU, EN)..."
                 repository.save_meeting(meeting)
 
                 minutes = await extraction_engine.extract_minutes(meeting, transcript)

@@ -11,23 +11,25 @@ interface DecisionsTableProps {
 
 const I18N = {
   all: {
-    title: 'Adopted Clinical & Operational Decisions / Decizii Clinice / Принятые решения',
-    subtitle: 'Verified consensus with audio timestamps / Consens clinic verificat / Проверенный консенсус',
-    reviewed: 'verified by reviewer / verificat / проверено',
-    decisionsCount: 'decisions / decizii / решений',
-    copy: 'Copy / Copiază / Копировать',
-    searchPlaceholder: 'Filter decisions / Filtrează decizii / Поиск решений...',
+    title: 'Clinical & Operational Decisions (Comparative View)',
+    subtitle: 'Multi-language consensus with verified audio timestamps',
+    reviewed: 'verified by reviewer',
+    decisionsCount: 'decisions',
+    copy: 'Copy',
+    searchPlaceholder: 'Filter decisions across languages...',
     categories: {
-      all: 'All / Toate / Все',
-      clinical: 'Clinical / Clinic / Клинические',
-      budget: 'Budget / Buget / Бюджет',
-      operations: 'Operations / Operațiuni / Операции',
-      protocol: 'Protocol / Protocol / Протокол',
+      all: 'All',
+      clinical: 'Clinical',
+      budget: 'Budget',
+      operations: 'Operations',
+      protocol: 'Protocol',
     } as Record<string, string>,
-    noEvidence: 'No audio evidence — verify manually / Fără dovadă audio / Нет аудио-метки',
-    noDecisions: 'No decisions were extracted from this recording / Nicio decizie extrasă / Решения не найдены',
-    noMatch: 'No decisions match your search filter / Nicio decizie nu corespunde filtrului / Нет решений по фильтру',
-    clearFilter: 'Clear filter / Resetează filtru / Сбросить фильтр',
+    verifiedBadge: 'Verified',
+    unverifiedBadge: 'Unverified',
+    noEvidence: 'No audio evidence — verify manually',
+    noDecisions: 'No decisions were extracted from this recording.',
+    noMatch: 'No decisions match your search filter.',
+    clearFilter: 'Clear filter',
   },
   ro: {
     title: 'Decizii Clinice și Operaționale Adoptate',
@@ -43,6 +45,8 @@ const I18N = {
       operations: 'Operațiuni',
       protocol: 'Protocol',
     } as Record<string, string>,
+    verifiedBadge: 'Verificat',
+    unverifiedBadge: 'Neverificat',
     noEvidence: 'Fără dovadă audio — verificați manual',
     noDecisions: 'Nicio decizie nu a fost extrasă din această înregistrare.',
     noMatch: 'Nicio decizie nu corespunde filtrului de căutare.',
@@ -62,6 +66,8 @@ const I18N = {
       operations: 'Операции',
       protocol: 'Протокол',
     } as Record<string, string>,
+    verifiedBadge: 'Проверено',
+    unverifiedBadge: 'Не проверено',
     noEvidence: 'Нет аудио-метки — проверьте вручную',
     noDecisions: 'Из этой записи не было извлечено никаких решений.',
     noMatch: 'Нет решений, соответствующих условиям поиска.',
@@ -81,6 +87,8 @@ const I18N = {
       operations: 'Operations',
       protocol: 'Protocol',
     } as Record<string, string>,
+    verifiedBadge: 'Verified',
+    unverifiedBadge: 'Unverified',
     noEvidence: 'No audio evidence — verify manually',
     noDecisions: 'No decisions were extracted from this recording.',
     noMatch: 'No decisions match your search filter.',
@@ -102,7 +110,11 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const localizedTopic = ((language === 'ru' && d.topic_ru) || (language === 'en' && d.topic_en) || d.topic).toLowerCase();
+      const localizedDecision = ((language === 'ru' && d.decision_ru) || (language === 'en' && d.decision_en) || d.decision).toLowerCase();
       return (
+        localizedDecision.includes(q) ||
+        localizedTopic.includes(q) ||
         d.decision.toLowerCase().includes(q) ||
         d.topic.toLowerCase().includes(q) ||
         d.category.toLowerCase().includes(q)
@@ -143,7 +155,11 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
   const handleCopyDecisions = () => {
     if (filteredDecisions.length === 0) return;
     const text = filteredDecisions
-      .map((d, idx) => `${idx + 1}. [${d.category.toUpperCase()}] ${d.topic}: ${d.decision}`)
+      .map((d, idx) => {
+        const topic = (language === 'ru' && d.topic_ru) || (language === 'en' && d.topic_en) || d.topic;
+        const dec = (language === 'ru' && d.decision_ru) || (language === 'en' && d.decision_en) || d.decision;
+        return `${idx + 1}. [${(t.categories[d.category.toLowerCase()] || d.category).toUpperCase()}] ${topic}: ${dec}`;
+      })
       .join('\n');
 
     navigator.clipboard.writeText(text);
@@ -247,29 +263,31 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
                 <div className="space-y-1.5 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-md border border-slate-200">
-                      {d.topic}
+                      {(language === 'ru' && d.topic_ru) || (language === 'en' && d.topic_en) || d.topic}
                     </span>
                     <span
                       className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${getCategoryBadge(
                         d.category
                       )}`}
                     >
-                      {d.category}
+                      {t.categories[d.category.toLowerCase()] || d.category}
                     </span>
                     {/* Read-only record of the per-item human verification */}
                     {d.is_reviewed ? (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
                         <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
-                        <span>Verified</span>
+                        <span>{t.verifiedBadge}</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
                         <Circle className="w-3 h-3" aria-hidden="true" />
-                        <span>Unverified</span>
+                        <span>{t.unverifiedBadge}</span>
                       </span>
                     )}
                   </div>
-                  <p className="text-sm font-semibold text-slate-900 leading-snug break-words">{d.decision}</p>
+                  <p className="text-sm font-semibold text-slate-900 leading-snug break-words">
+                    {(language === 'ru' && d.decision_ru) || (language === 'en' && d.decision_en) || d.decision}
+                  </p>
                 </div>
               </div>
 

@@ -34,6 +34,7 @@ import {
   Plus,
   Globe,
   Archive,
+  X,
 } from 'lucide-react';
 
 interface SessionWorkspaceViewProps {
@@ -74,6 +75,7 @@ interface SessionWorkspaceViewProps {
   onSaveSummary: () => void;
   onUpdateSegment: (segmentId: string, text: string) => Promise<void>;
   onSeekAudio: (time: number) => void;
+  onMinutesUpdated?: (minutes: MinutesOfMeeting) => void;
 }
 
 const PIPELINE_STAGES: { key: string; label: string }[] = [
@@ -123,8 +125,66 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   onSaveSummary,
   onUpdateSegment,
   onSeekAudio,
+  onMinutesUpdated,
 }) => {
-  const [momLanguage, setMomLanguage] = useState<'all' | 'ro' | 'ru' | 'en'>('all');
+  const [momLanguage, setMomLanguage] = useState<'ro' | 'ru' | 'en' | 'all'>('ro');
+  const [isTranslating, setIsTranslating] = useState<'ru' | 'en' | null>(null);
+  const [dismissedRevisionKey, setDismissedRevisionKey] = useState<string | null>(null);
+
+  const handleLanguageChange = async (newLang: 'ro' | 'ru' | 'en' | 'all') => {
+    setMomLanguage(newLang);
+    if (newLang !== 'ru' && newLang !== 'en') {
+      return;
+    }
+    if (!minutes || !selectedMeeting) {
+      return;
+    }
+
+    const hasTranslation =
+      newLang === 'ru'
+        ? Boolean(minutes.agenda_topics_ru && minutes.agenda_topics_ru.length > 0) ||
+          Boolean(minutes.decisions?.some((d) => d.decision_ru)) ||
+          Boolean(minutes.action_items?.some((a) => a.task_ru))
+        : Boolean(minutes.agenda_topics_en && minutes.agenda_topics_en.length > 0) ||
+          Boolean(minutes.decisions?.some((d) => d.decision_en)) ||
+          Boolean(minutes.action_items?.some((a) => a.task_en));
+
+    if (!hasTranslation && !isTranslating) {
+      try {
+        setIsTranslating(newLang);
+        const updated = await apiClient.translateMinutes(selectedMeeting.id, newLang, false);
+        if (onMinutesUpdated) {
+          onMinutesUpdated(updated);
+        }
+      } catch (err) {
+        console.error(`Failed to translate minutes to ${newLang}:`, err);
+      } finally {
+        setIsTranslating(null);
+      }
+    }
+  };
+
+  const failedChunkCount = minutes?.failed_chunks?.length ?? 0;
+  const showReviewFlags = Boolean(
+    minutes && (minutes.is_degraded || minutes.needs_name_review || failedChunkCount > 0)
+  );
+  const currentRevisionKey = selectedMeeting && minutes ? `${selectedMeeting.id}-${minutes.revision}` : null;
+  const isFlagsDismissed = dismissedRevisionKey !== null && dismissedRevisionKey === currentRevisionKey;
+
+  const getReviewFlagMessage = () => {
+    if (!minutes) return '';
+    if (minutes.is_degraded) {
+      return 'Heuristic draft (local LLM unavailable) — re-run pipeline before sign-off.';
+    }
+    const parts: string[] = [];
+    if (minutes.needs_name_review) {
+      parts.push('Name review needed: an action owner or proper noun is not on the attendee roster.');
+    }
+    if (failedChunkCount > 0) {
+      parts.push(`${failedChunkCount} transcript fragment${failedChunkCount === 1 ? '' : 's'} failed extraction.`);
+    }
+    return parts.join(' ');
+  };
 
   if (!selectedMeeting) {
     return (
@@ -217,6 +277,49 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Review Flags Banner - Compact Single Line */}
+      {showReviewFlags && !isFlagsDismissed && (
+        <div
+          role="alert"
+          className={`px-4 py-2.5 rounded-xl border flex items-center justify-between gap-3 text-xs shadow-xs transition-all ${
+            minutes?.is_degraded
+              ? 'bg-rose-50 border-rose-200 text-rose-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}
+        >
+          <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+            <AlertCircle
+              className={`w-4 h-4 flex-shrink-0 ${minutes?.is_degraded ? 'text-rose-600' : 'text-amber-600'}`}
+              aria-hidden="true"
+            />
+            <span
+              className={`font-bold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded flex-shrink-0 ${
+                minutes?.is_degraded ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              {minutes?.is_degraded ? 'Degraded Draft' : 'Review Flag'}
+            </span>
+            <span className="font-medium truncate">
+              {getReviewFlagMessage()}
+            </span>
+            {minutes?.model_version && (
+              <span className="hidden lg:inline-flex items-center font-mono text-[10px] text-slate-500 bg-white/70 px-2 py-0.5 rounded border border-slate-200/60 flex-shrink-0 ml-auto">
+                Model: {minutes.model_version}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => currentRevisionKey && setDismissedRevisionKey(currentRevisionKey)}
+            className="text-slate-400 hover:text-slate-700 p-1 rounded-md transition-colors flex-shrink-0"
+            title="Dismiss review notice"
+            aria-label="Dismiss review notice"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Live Processing Banner */}
       {isProcessing && (
@@ -542,18 +645,22 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                   </div>
                   <div>
                     <span className="text-xs font-bold text-slate-900">
-                      MoM Language / Limba Proces-Verbal / Язык протокола
+                      {momLanguage === 'ro'
+                        ? 'Limba Proces-Verbal'
+                        : momLanguage === 'ru'
+                        ? 'Язык протокола'
+                        : momLanguage === 'en'
+                        ? 'Minutes Language'
+                        : 'Limba Proces-Verbal (MoM)'}
                     </span>
                     <p className="text-[11px] text-slate-500">
-                      {momLanguage === 'all'
-                        ? 'Displaying all 3 languages (Română • Русский • English) simultaneously'
-                        : `Viewing minutes in ${
-                            momLanguage === 'ro'
-                              ? 'Română (RO)'
-                              : momLanguage === 'ru'
-                              ? 'Русский (RU)'
-                              : 'English (EN)'
-                          }`}
+                      {momLanguage === 'ro'
+                        ? 'Afișare proces-verbal oficial în limba Română'
+                        : momLanguage === 'ru'
+                        ? 'Отображение официального протокола на русском языке'
+                        : momLanguage === 'en'
+                        ? 'Displaying official minutes in English'
+                        : 'Afișare comparativă simultană a celor 3 limbi'}
                     </p>
                   </div>
                 </div>
@@ -564,20 +671,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                   aria-label="MoM Language View"
                 >
                   <button
-                    onClick={() => setMomLanguage('all')}
-                    role="radio"
-                    aria-checked={momLanguage === 'all'}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
-                      momLanguage === 'all'
-                        ? 'bg-white text-medpark-700 shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    <span>🌐</span>
-                    <span>All 3 Languages</span>
-                  </button>
-                  <button
-                    onClick={() => setMomLanguage('ro')}
+                    onClick={() => handleLanguageChange('ro')}
                     role="radio"
                     aria-checked={momLanguage === 'ro'}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
@@ -590,30 +684,53 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                     <span>Română (RO)</span>
                   </button>
                   <button
-                    onClick={() => setMomLanguage('ru')}
+                    onClick={() => handleLanguageChange('ru')}
                     role="radio"
                     aria-checked={momLanguage === 'ru'}
+                    disabled={isTranslating !== null}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
                       momLanguage === 'ru'
                         ? 'bg-white text-medpark-700 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <span>🇷🇺</span>
-                    <span>Русский (RU)</span>
+                    {isTranslating === 'ru' ? (
+                      <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin text-medpark-600" />
+                    ) : (
+                      <span>🇷🇺</span>
+                    )}
+                    <span>{isTranslating === 'ru' ? 'Traducere RU...' : 'Русский (RU)'}</span>
                   </button>
                   <button
-                    onClick={() => setMomLanguage('en')}
+                    onClick={() => handleLanguageChange('en')}
                     role="radio"
                     aria-checked={momLanguage === 'en'}
+                    disabled={isTranslating !== null}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
                       momLanguage === 'en'
                         ? 'bg-white text-medpark-700 shadow-xs'
                         : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    <span>🇬🇧</span>
-                    <span>English (EN)</span>
+                    {isTranslating === 'en' ? (
+                      <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin text-medpark-600" />
+                    ) : (
+                      <span>🇬🇧</span>
+                    )}
+                    <span>{isTranslating === 'en' ? 'Translating EN...' : 'English (EN)'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleLanguageChange('all')}
+                    role="radio"
+                    aria-checked={momLanguage === 'all'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center space-x-1.5 ${
+                      momLanguage === 'all'
+                        ? 'bg-white text-medpark-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🌐</span>
+                    <span>All 3 Languages</span>
                   </button>
                 </div>
               </div>
@@ -643,7 +760,15 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <Sparkles className="w-4 h-4 text-medpark-600" />
-                    <h3 className="font-bold text-sm text-slate-900">Medora Executive Summary</h3>
+                    <h3 className="font-bold text-sm text-slate-900">
+                      {momLanguage === 'ro'
+                        ? 'Rezumat Executiv Medora'
+                        : momLanguage === 'ru'
+                        ? 'Краткое содержание заседания (Резюме)'
+                        : momLanguage === 'en'
+                        ? 'Medora Executive Summary'
+                        : 'Rezumat Executiv (Executive Summary)'}
+                    </h3>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
                       Revision {minutes.revision}
                     </span>
@@ -669,7 +794,15 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                       className="inline-flex items-center space-x-1.5 text-xs text-slate-600 hover:text-medpark-600 hover:bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200 transition-colors font-semibold"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
-                      <span>Edit Summary</span>
+                      <span>
+                        {momLanguage === 'ro'
+                          ? 'Editează rezumat'
+                          : momLanguage === 'ru'
+                          ? 'Редактировать резюме'
+                          : momLanguage === 'en'
+                          ? 'Edit Summary'
+                          : 'Edit Summary'}
+                      </span>
                     </button>
                   ) : (
                     <div className="flex items-center space-x-2">
@@ -907,19 +1040,73 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
                         ? 'Темы повестки заседания'
                         : momLanguage === 'en'
                         ? 'Agenda Topics'
-                        : 'Agenda Topics / Subiecte Agendă / Темы повестки'}
+                        : 'Subiecte Agendă (Agenda Topics)'}
                     </h4>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {minutes.agenda_topics.map((topic, idx) => (
-                      <span
-                        key={idx}
-                        className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200"
-                      >
-                        {topic}
-                      </span>
-                    ))}
-                  </div>
+                  {momLanguage === 'all' ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-medpark-50 text-medpark-700 border border-medpark-200 mr-1">
+                          RO
+                        </span>
+                        {minutes.agenda_topics.map((topic, idx) => (
+                          <span
+                            key={`ro-${idx}`}
+                            className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-md border border-slate-200"
+                          >
+                            {topic}
+                          </span>
+                        ))}
+                      </div>
+                      {minutes.agenda_topics_ru && minutes.agenda_topics_ru.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 mr-1">
+                            RU
+                          </span>
+                          {minutes.agenda_topics_ru.map((topic, idx) => (
+                            <span
+                              key={`ru-${idx}`}
+                              className="text-xs font-bold bg-blue-50/50 text-blue-800 px-2.5 py-0.5 rounded-md border border-blue-200"
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {minutes.agenda_topics_en && minutes.agenda_topics_en.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">
+                            EN
+                          </span>
+                          {minutes.agenda_topics_en.map((topic, idx) => (
+                            <span
+                              key={`en-${idx}`}
+                              className="text-xs font-bold bg-emerald-50/50 text-emerald-800 px-2.5 py-0.5 rounded-md border border-emerald-200"
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {(
+                        (momLanguage === 'ru' && minutes.agenda_topics_ru && minutes.agenda_topics_ru.length > 0
+                          ? minutes.agenda_topics_ru
+                          : momLanguage === 'en' && minutes.agenda_topics_en && minutes.agenda_topics_en.length > 0
+                          ? minutes.agenda_topics_en
+                          : minutes.agenda_topics) || []
+                      ).map((topic, idx) => (
+                        <span
+                          key={idx}
+                          className="text-xs font-bold bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md border border-slate-200"
+                        >
+                          {topic}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

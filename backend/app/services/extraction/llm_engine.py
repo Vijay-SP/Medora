@@ -87,7 +87,14 @@ class LocalLLMExtractor(BaseExtractor):
 
         if provenance == HEURISTIC_FALLBACK_PROVENANCE:
             minutes = extract_heuristic(meeting, transcript)
-            return evidence_validator.validate_and_enrich(minutes, transcript, meeting)
+            minutes = evidence_validator.validate_and_enrich(minutes, transcript, meeting)
+            from app.services.translation.translation_service import translation_service
+            try:
+                await translation_service.translate_mom(minutes, "ru")
+                await translation_service.translate_mom(minutes, "en")
+            except Exception as trans_err:
+                logger.warning(f"Translation during heuristic extraction warning: {trans_err}")
+            return minutes
 
         started = time.perf_counter()
         stats: dict[str, Any] = {
@@ -104,6 +111,15 @@ class LocalLLMExtractor(BaseExtractor):
         }
         try:
             minutes = await self._extract_with_llm(meeting, transcript, provenance, stats)
+
+            # Multilingual MoM Translation (RU & EN) while the LLM is warm in VRAM
+            from app.services.translation.translation_service import translation_service
+            try:
+                logger.info(f"Translating minutes to RU and EN for meeting {meeting.id}...")
+                await translation_service.translate_mom(minutes, "ru")
+                await translation_service.translate_mom(minutes, "en")
+            except Exception as trans_err:
+                logger.warning(f"Automatic translation during extraction encountered warning: {trans_err}")
         finally:
             # The LLM (~2.7 GB) and Whisper cannot share the 4 GB VRAM: free it for the next meeting's ASR
             await self.client.unload()
