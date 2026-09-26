@@ -62,6 +62,7 @@ class MinutesOfMeeting(BaseModel):
     title: str
     meeting_type: str = "medical"
     summary_ro: str = Field(..., description="Comprehensive executive summary in Romanian")
+    summary_ru: Optional[str] = Field(None, description="Executive summary in Russian")
     summary_en: Optional[str] = Field(None, description="Secondary summary in English")
     agenda_topics: list[str] = Field(default_factory=list)
     decisions: list[DecisionItem] = Field(default_factory=list)

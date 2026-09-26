@@ -47,7 +47,8 @@ SYNTHESIS_SYSTEM_PROMPT = """Ești asistentul de proces-verbal al unui spital. P
 
 Redactează:
 - summary_ro: rezumat executiv în limba ROMÂNĂ, 3-6 fraze, bazat EXCLUSIV pe elementele primite;
-- summary_en: același rezumat în limba ENGLEZĂ;
+- summary_ru: același rezumat executiv tradus/redactat în limba RUSĂ;
+- summary_en: același rezumat executiv în limba ENGLEZĂ;
 - agenda_topics: 1-6 subiecte scurte (în română) care grupează elementele.
 
 REGULI: nu adăuga informații, nume, date sau cifre care nu apar în elementele primite; nu menționa numerele de linie; păstrează dozele și termenii medicali exact. Dacă lista este scurtă, rezumatul este scurt. Răspunde EXCLUSIV cu JSON valid conform schemei."""
@@ -55,9 +56,9 @@ REGULI: nu adăuga informații, nume, date sau cifre care nu apar în elementele
 SYNTHESIS_USER_PROMPT_TEMPLATE = """ELEMENTE EXTRASE:
 {items_block}
 
-Redactează summary_ro (în ROMÂNĂ), summary_en (obligatoriu în ENGLEZĂ – "summary_en" must be written entirely in English, never in Romanian) și agenda_topics pe baza elementelor de mai sus."""
+Redactează summary_ro (în ROMÂNĂ), summary_ru (în RUSĂ), summary_en (obligatoriu în ENGLEZĂ – "summary_en" must be written entirely in English, never in Romanian) și agenda_topics pe baza elementelor de mai sus."""
 
 SYNTHESIS_REPAIR_TEMPLATE = """
 
 RĂSPUNSUL ANTERIOR A FOST INVALID: {error}
-Generează din nou răspunsul respectând strict schema (summary_ro, summary_en, agenda_topics cu maximum 6 subiecte). Răspunde doar cu JSON."""
+Generează din nou răspunsul respectând strict schema (summary_ro, summary_ru, summary_en, agenda_topics cu maximum 6 subiecte). Răspunde doar cu JSON."""

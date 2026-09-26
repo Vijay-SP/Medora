@@ -106,6 +106,7 @@ export const App: React.FC = () => {
   // Minutes Editing
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   const [summaryRoEdit, setSummaryRoEdit] = useState('');
+  const [summaryRuEdit, setSummaryRuEdit] = useState('');
   const [summaryEnEdit, setSummaryEnEdit] = useState('');
   const [isSavingMinutes, setIsSavingMinutes] = useState(false);
 
@@ -307,6 +308,7 @@ export const App: React.FC = () => {
         if (selectedMeetingIdRef.current === id) {
           setMinutes(min);
           setSummaryRoEdit(min.summary_ro || '');
+          setSummaryRuEdit(min.summary_ru || '');
           setSummaryEnEdit(min.summary_en || '');
         }
       } catch {
@@ -397,6 +399,7 @@ export const App: React.FC = () => {
       const updated = await apiClient.updateMinutes(selectedMeetingId, {
         ...minutes,
         summary_ro: summaryRoEdit,
+        summary_ru: summaryRuEdit,
         summary_en: summaryEnEdit,
       });
       setMinutes(updated);
@@ -513,6 +516,10 @@ export const App: React.FC = () => {
       lines.push('', '> Verificare nume necesara - a non-roster owner or proper noun needs confirmation');
     }
     lines.push('', '## Executive Summary (RO)', minutes.summary_ro);
+
+    if (minutes.summary_ru) {
+      lines.push('', '## Executive Summary (RU)', minutes.summary_ru);
+    }
 
     if (minutes.summary_en) {
       lines.push('', '## Executive Summary (EN)', minutes.summary_en);
@@ -773,6 +780,8 @@ export const App: React.FC = () => {
               setIsEditingSummary={setIsEditingSummary}
               summaryRoEdit={summaryRoEdit}
               setSummaryRoEdit={setSummaryRoEdit}
+              summaryRuEdit={summaryRuEdit}
+              setSummaryRuEdit={setSummaryRuEdit}
               summaryEnEdit={summaryEnEdit}
               setSummaryEnEdit={setSummaryEnEdit}
               isSavingMinutes={isSavingMinutes}

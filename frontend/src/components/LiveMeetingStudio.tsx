@@ -16,6 +16,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { MeetingCreate, MeetingType, WorkflowMode, Attendee } from '../types';
+import { ParticipantSelector } from './ParticipantSelector';
 
 interface LiveMeetingStudioProps {
   onMeetingRecorded: (payload: MeetingCreate, audioFile: File) => Promise<void>;
@@ -37,12 +38,7 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
   const [meetingType, setMeetingType] = useState<MeetingType>('medical');
   const [workflowMode, setWorkflowMode] = useState<WorkflowMode>('supervised');
   const [agenda, setAgenda] = useState('');
-  const [attendees, setAttendees] = useState<Attendee[]>([
-    { id: '1', name: 'Dr. Elena Ceban', role: 'Medical Director / Surgeon', email: 'elena.ceban@medpark.md' },
-    { id: '2', name: 'Dr. Mihail Popov', role: 'Chief of Intensive Care (ICU)', email: 'mihail.popov@medpark.md' },
-  ]);
-  const [newAttName, setNewAttName] = useState('');
-  const [newAttEmail, setNewAttEmail] = useState('');
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
 
   // Recording & Hardware state
   const [isRecording, setIsRecording] = useState(false);
@@ -367,27 +363,8 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const handleAddAttendee = () => {
-    if (!newAttName.trim() || !newAttEmail.trim()) return;
-    setAttendees((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        name: newAttName.trim(),
-        role: 'Participant',
-        email: newAttEmail.trim(),
-      },
-    ]);
-    setNewAttName('');
-    setNewAttEmail('');
-  };
-
-  const handleRemoveAttendee = (id: string) => {
-    setAttendees((prev) => prev.filter((a) => a.id !== id));
-  };
-
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Top Banner */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -428,7 +405,7 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
       {/* Main Studio Console */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Live Audio Controls & Visualizer */}
-        <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between space-y-6">
+        <div className="lg:col-span-6 xl:col-span-7 bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/90 shadow-sm flex flex-col justify-between space-y-6">
           <div>
             {/* Audio Device Selector */}
             <div className="space-y-1.5 mb-6">
@@ -582,7 +559,7 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
         </div>
 
         {/* Right Column: Meeting Metadata & Participants */}
-        <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
+        <div className="lg:col-span-6 xl:col-span-5 bg-white p-6 sm:p-7 rounded-2xl border border-slate-200/90 shadow-sm space-y-4">
           <h3 className="font-bold text-slate-900 text-sm border-b border-slate-100 pb-2">
             Session Configuration
           </h3>
@@ -652,59 +629,12 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
           </div>
 
           {/* Attendees */}
-          <div className="space-y-2 pt-2 border-t border-slate-100">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-700 flex items-center space-x-1.5">
-                <Users className="w-3.5 h-3.5 text-slate-500" />
-                <span>Attending Clinicians ({attendees.length})</span>
-              </span>
-              <span className="text-[10px] text-slate-400">Receives signed minutes</span>
-            </div>
-
-            <div className="max-h-40 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl p-2 space-y-1">
-              {attendees.map((att) => (
-                <div key={att.id} className="flex items-center justify-between text-xs py-1 px-1 hover:bg-slate-50 rounded">
-                  <div className="min-w-0 truncate">
-                    <span className="font-semibold text-slate-800">{att.name}</span>
-                    <span className="text-slate-400 ml-2 font-mono text-[11px]">{att.email}</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttendee(att.id)}
-                    aria-label={`Remove ${att.name}`}
-                    className="text-slate-400 hover:text-rose-600 p-1 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Quick Add Attendee */}
-            <div className="flex items-center space-x-2 pt-1">
-              <input
-                type="text"
-                value={newAttName}
-                onChange={(e) => setNewAttName(e.target.value)}
-                placeholder="Doctor name"
-                className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300"
-              />
-              <input
-                type="email"
-                value={newAttEmail}
-                onChange={(e) => setNewAttEmail(e.target.value)}
-                placeholder="email@medpark.md"
-                className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-slate-300"
-              />
-              <button
-                type="button"
-                onClick={handleAddAttendee}
-                disabled={!newAttName.trim() || !newAttEmail.trim()}
-                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold disabled:opacity-50"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </div>
+          <div className="pt-2 border-t border-slate-100">
+            <ParticipantSelector
+              attendees={attendees}
+              onChange={setAttendees}
+              disabled={isRecording || isProcessingFinal}
+            />
           </div>
         </div>
       </div>

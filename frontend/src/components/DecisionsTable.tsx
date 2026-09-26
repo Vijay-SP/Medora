@@ -6,12 +6,93 @@ import { CheckCircle2, Play, Search, Copy, Filter, Sparkles, AlertTriangle, Circ
 interface DecisionsTableProps {
   decisions: DecisionItem[];
   onSeek: (startSec: number, endSec?: number) => void;
+  language?: 'all' | 'ro' | 'ru' | 'en';
 }
 
-export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSeek }) => {
+const I18N = {
+  all: {
+    title: 'Adopted Clinical & Operational Decisions / Decizii Clinice / Принятые решения',
+    subtitle: 'Verified consensus with audio timestamps / Consens clinic verificat / Проверенный консенсус',
+    reviewed: 'verified by reviewer / verificat / проверено',
+    decisionsCount: 'decisions / decizii / решений',
+    copy: 'Copy / Copiază / Копировать',
+    searchPlaceholder: 'Filter decisions / Filtrează decizii / Поиск решений...',
+    categories: {
+      all: 'All / Toate / Все',
+      clinical: 'Clinical / Clinic / Клинические',
+      budget: 'Budget / Buget / Бюджет',
+      operations: 'Operations / Operațiuni / Операции',
+      protocol: 'Protocol / Protocol / Протокол',
+    } as Record<string, string>,
+    noEvidence: 'No audio evidence — verify manually / Fără dovadă audio / Нет аудио-метки',
+    noDecisions: 'No decisions were extracted from this recording / Nicio decizie extrasă / Решения не найдены',
+    noMatch: 'No decisions match your search filter / Nicio decizie nu corespunde filtrului / Нет решений по фильтру',
+    clearFilter: 'Clear filter / Resetează filtru / Сбросить фильтр',
+  },
+  ro: {
+    title: 'Decizii Clinice și Operaționale Adoptate',
+    subtitle: 'Consens verificat al consiliului medical cu marcaje temporale audio',
+    reviewed: 'verificate de un recenzent',
+    decisionsCount: 'decizii',
+    copy: 'Copiază',
+    searchPlaceholder: 'Filtrează deciziile după cuvinte cheie...',
+    categories: {
+      all: 'Toate',
+      clinical: 'Clinic',
+      budget: 'Buget',
+      operations: 'Operațiuni',
+      protocol: 'Protocol',
+    } as Record<string, string>,
+    noEvidence: 'Fără dovadă audio — verificați manual',
+    noDecisions: 'Nicio decizie nu a fost extrasă din această înregistrare.',
+    noMatch: 'Nicio decizie nu corespunde filtrului de căutare.',
+    clearFilter: 'Resetează filtrul',
+  },
+  ru: {
+    title: 'Принятые клинические и операционные решения',
+    subtitle: 'Подтвержденный консенсус клинического совета с таймкодами аудио',
+    reviewed: 'проверено рецензентом',
+    decisionsCount: 'решений',
+    copy: 'Копировать',
+    searchPlaceholder: 'Поиск решений по ключевым словам...',
+    categories: {
+      all: 'Все',
+      clinical: 'Клинические',
+      budget: 'Бюджет',
+      operations: 'Операции',
+      protocol: 'Протокол',
+    } as Record<string, string>,
+    noEvidence: 'Нет аудио-метки — проверьте вручную',
+    noDecisions: 'Из этой записи не было извлечено никаких решений.',
+    noMatch: 'Нет решений, соответствующих условиям поиска.',
+    clearFilter: 'Сбросить фильтр',
+  },
+  en: {
+    title: 'Adopted Clinical & Operational Decisions',
+    subtitle: 'Verified clinical council consensus with audio timestamps',
+    reviewed: 'verified by a reviewer',
+    decisionsCount: 'decisions',
+    copy: 'Copy',
+    searchPlaceholder: 'Filter decisions by keyword...',
+    categories: {
+      all: 'All',
+      clinical: 'Clinical',
+      budget: 'Budget',
+      operations: 'Operations',
+      protocol: 'Protocol',
+    } as Record<string, string>,
+    noEvidence: 'No audio evidence — verify manually',
+    noDecisions: 'No decisions were extracted from this recording.',
+    noMatch: 'No decisions match your search filter.',
+    clearFilter: 'Clear filter',
+  },
+};
+
+export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSeek, language = 'all' }) => {
   const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const t = I18N[language] || I18N.all;
 
   const categories = ['all', 'clinical', 'budget', 'operations', 'protocol'];
 
@@ -83,11 +164,11 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
             </div>
             <div>
               <h3 id="decisions-heading" className="font-bold text-slate-900 text-sm">
-                Adopted Clinical &amp; Operational Decisions
+                {t.title}
               </h3>
-              <p className="text-xs text-slate-500">Verified clinical council consensus with audio timestamps</p>
+              <p className="text-xs text-slate-500">{t.subtitle}</p>
               <p className="text-[11px] font-medium text-slate-500 tabular-nums mt-0.5">
-                {reviewedCount} of {decisions.length} verified by a reviewer
+                {reviewedCount} / {decisions.length} {t.reviewed}
               </p>
             </div>
           </div>
@@ -97,7 +178,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
               role="status"
               className="text-xs font-semibold tabular-nums px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
             >
-              {filteredDecisions.length} decisions
+              {filteredDecisions.length} {t.decisionsCount}
             </span>
             <button
               onClick={handleCopyDecisions}
@@ -106,7 +187,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
               title="Copy decisions list to clipboard"
             >
               <Copy className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-              <span>Copy</span>
+              <span>{t.copy}</span>
             </button>
           </div>
         </div>
@@ -119,7 +200,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter decisions by keyword..."
+              placeholder={t.searchPlaceholder}
               aria-label="Search decisions"
               className="w-full text-xs pl-9 pr-3 py-2 rounded-lg border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-medpark-500/40 focus:border-medpark-500"
             />
@@ -142,7 +223,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {cat}
+                {t.categories[cat] || cat}
               </button>
             ))}
           </div>
@@ -221,7 +302,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
                 <div className="pt-1">
                   <span className="inline-flex items-center space-x-1.5 text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
                     <AlertTriangle className="w-3 h-3" aria-hidden="true" />
-                    <span>No audio evidence — verify manually</span>
+                    <span>{t.noEvidence}</span>
                   </span>
                 </div>
               )}
@@ -232,9 +313,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
         {filteredDecisions.length === 0 && (
           <div className="p-8 text-center space-y-3">
             <p className="text-sm text-slate-600">
-              {decisions.length === 0
-                ? 'No decisions were extracted from this recording.'
-                : 'No decisions match your search filter.'}
+              {decisions.length === 0 ? t.noDecisions : t.noMatch}
             </p>
             {decisions.length > 0 && (
               <button
@@ -242,7 +321,7 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
                 className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/40"
               >
                 <Filter className="w-3.5 h-3.5 text-slate-500" aria-hidden="true" />
-                <span>Clear filter</span>
+                <span>{t.clearFilter}</span>
               </button>
             )}
           </div>

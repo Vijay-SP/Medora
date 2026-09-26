@@ -68,6 +68,8 @@ class Attendee(BaseModel):
     name: str = Field(..., description="Full name, e.g., 'Dr. Elena Ceban'")
     role: str = Field(default="Member", description="Department / Clinical Role")
     email: str = Field(..., description="Internal hospital email address")
+    department: Optional[str] = Field(None, description="Hospital department, e.g. Cardiology, Surgery")
+    person_id: Optional[str] = Field(None, description="Linked registered Person ID if selected from roster")
 
 
 class MeetingBase(BaseModel):

@@ -350,6 +350,10 @@ class LocalLLMExtractor(BaseExtractor):
                 "Nu au fost identificate decizii ferme, sarcini atribuite sau riscuri semnalate în transcrierea acestei ședințe. "
                 "Se recomandă verificarea calității înregistrării și a transcrierii."
             )
+            minutes.summary_ru = (
+                "В стенограмме данного заседания не выявлено твердых решений, назначенных задач или отмеченных рисков. "
+                "Рекомендуется проверить качество аудиозаписи и транскрипции."
+            )
             minutes.summary_en = (
                 "No firm decisions, assigned tasks or flagged risks were identified in this meeting's transcript. "
                 "Recording and transcription quality should be checked."
@@ -385,6 +389,7 @@ class LocalLLMExtractor(BaseExtractor):
                 self._accumulate(stats, call_stats)
                 result = SynthesisResult.model_validate(raw)
                 minutes.summary_ro = result.summary_ro.strip() or "Rezumat indisponibil."
+                minutes.summary_ru = result.summary_ru.strip() if result.summary_ru else None
                 minutes.summary_en = result.summary_en.strip() or None
                 minutes.agenda_topics = [t.strip() for t in result.agenda_topics if t.strip()]
                 return None
@@ -399,6 +404,10 @@ class LocalLLMExtractor(BaseExtractor):
         minutes.summary_ro = (
             f"Rezumatul narativ nu a putut fi generat automat. Ședința a înregistrat {len(decisions)} decizii, "
             f"{len(actions)} sarcini și {len(risks)} riscuri/întrebări, listate mai jos."
+        )
+        minutes.summary_ru = (
+            f"Автоматическое резюме не удалось сформировать. В ходе заседания зафиксировано {len(decisions)} решений, "
+            f"{len(actions)} задач и {len(risks)} рисков/вопросов, перечисленных ниже."
         )
         minutes.summary_en = (
             f"The narrative summary could not be generated automatically. The meeting recorded {len(decisions)} decisions, "

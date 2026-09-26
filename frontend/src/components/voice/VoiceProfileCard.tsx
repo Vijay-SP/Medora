@@ -9,6 +9,7 @@ import {
   Trash2,
   AlertTriangle,
   Clock,
+  Globe,
 } from 'lucide-react';
 import { VoiceProfile, EnrollmentState } from '../../types';
 
@@ -89,11 +90,24 @@ export const VoiceProfileCard: React.FC<VoiceProfileCardProps> = ({
       {/* Identity */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-bold text-slate-900 truncate" title={profile.person_name}>
-            {profile.person_name}
-          </h3>
-          <p className="text-xs text-slate-500 truncate">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-sm font-bold text-slate-900 truncate" title={profile.person_name}>
+              {profile.title ? `${profile.title} ` : ''}{profile.person_name}
+            </h3>
+            {profile.department && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-medpark-50 text-medpark-700 border border-medpark-200">
+                {profile.department}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 truncate mt-0.5">
             {profile.role || 'Member'}
+            {profile.specialty && (
+              <>
+                <span className="mx-1.5 text-slate-300" aria-hidden="true">&middot;</span>
+                <span className="text-slate-600 font-medium">{profile.specialty}</span>
+              </>
+            )}
             {profile.email && (
               <>
                 <span className="mx-1.5 text-slate-300" aria-hidden="true">
@@ -135,6 +149,15 @@ export const VoiceProfileCard: React.FC<VoiceProfileCardProps> = ({
             {formatSpeechSeconds(profile.total_sample_seconds)}
           </dd>
         </div>
+        {profile.primary_language && (
+          <div className="col-span-2 flex items-center space-x-1.5 text-slate-500">
+            <Globe className="w-3 h-3 text-slate-400 flex-shrink-0" aria-hidden="true" />
+            <dt className="sr-only">Primary spoken language</dt>
+            <dd className="text-xs text-slate-600">
+              Spoken language: <span className="font-semibold uppercase">{profile.primary_language}</span>
+            </dd>
+          </div>
+        )}
         {enrolledAt && (
           <div className="col-span-2 flex items-center space-x-1.5 text-slate-500">
             <Clock className="w-3 h-3 text-slate-400 flex-shrink-0" aria-hidden="true" />

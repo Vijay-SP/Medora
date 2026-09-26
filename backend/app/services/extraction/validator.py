@@ -161,7 +161,7 @@ def audit_free_prose(minutes: MinutesOfMeeting, transcript: Transcript, meeting:
     for attendee in meeting.attendees:
         attendee_words.update(_name_tokens(attendee.name))
 
-    fields: list[str] = [minutes.summary_ro or "", minutes.summary_en or ""]
+    fields: list[str] = [minutes.summary_ro or "", minutes.summary_ru or "", minutes.summary_en or ""]
     fields.extend(minutes.agenda_topics)
     for dec in minutes.decisions:
         fields.extend([dec.topic, dec.decision])
