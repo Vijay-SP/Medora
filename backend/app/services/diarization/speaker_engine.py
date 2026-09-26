@@ -47,7 +47,13 @@ from app.services.diarization.clustering import (
     diagnose_clusters,
 )
 from app.services.diarization.embedder import EXPECTED_SAMPLE_RATE, MIN_SECONDS, speaker_embedder
-from app.services.diarization.matching import merge_suggestions, pick_suggestion, score_clusters
+from app.services.diarization.matching import (
+    collect_voiceprints,
+    merge_suggestions,
+    pick_suggestion,
+    score_clusters,
+    score_vector,
+)
 from app.storage.file_manager import file_manager
 
 # Silero settings for turn-level boundaries (ASR's own pass uses a coarser 500 ms silence)
@@ -302,6 +308,19 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
             if best not in label_to_number:
                 label_to_number[best] = len(label_to_number) + 1
 
+        # --- boundary refinement at speaker transitions
+        if getattr(settings, "SPEAKER_BOUNDARY_REFINE_ENABLED", True) and len(order) > 1:
+            for idx in range(len(order) - 1):
+                seg_a = segments[order[idx]]
+                seg_b = segments[order[idx + 1]]
+                if segment_label[order[idx]] != segment_label[order[idx + 1]]:
+                    # Overlap between consecutive segments of different speakers
+                    if seg_a.end > seg_b.start:
+                        split_pt = round(0.5 * (seg_a.end + seg_b.start), 3)
+                        if split_pt > seg_a.start + 0.1 and split_pt < seg_b.end - 0.1:
+                            seg_a.end = split_pt
+                            seg_b.start = split_pt
+
         cluster_ids: dict[int, str] = {}
         for i, seg in enumerate(segments):
             number = label_to_number[segment_label[i]]
@@ -331,16 +350,75 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
         suggested_clusters = 0
         if people and settings.VOICE_ID_ENABLED and space_id:
             candidates_by_cluster = score_clusters(centroids, people, space_id)
+
+            # --- turn-level segment voting per speaker cluster
+            refs, _ = collect_voiceprints(people, space_id)
+            if refs and len(segment_matrix) > 0:
+                votes_by_cluster: dict[str, dict[str, int]] = {}
+                total_votes_by_cluster: dict[str, int] = {}
+                for k, seg_idx in enumerate(embed_indices):
+                    seg_cluster = segments[seg_idx].cluster_id
+                    if not seg_cluster:
+                        continue
+                    total_votes_by_cluster[seg_cluster] = total_votes_by_cluster.get(seg_cluster, 0) + 1
+                    seg_cands = score_vector(segment_matrix[k], refs)
+                    if seg_cands and seg_cands[0].band != "no_match" and seg_cands[0].score >= settings.SPEAKER_MATCH_MIN_SCORE:
+                        top_p = seg_cands[0].person_id
+                        votes_by_cluster.setdefault(seg_cluster, {})
+                        votes_by_cluster[seg_cluster][top_p] = votes_by_cluster[seg_cluster].get(top_p, 0) + 1
+
+                for cid, cands in candidates_by_cluster.items():
+                    tot = total_votes_by_cluster.get(cid, 0)
+                    for cand in cands:
+                        v = votes_by_cluster.get(cid, {}).get(cand.person_id, 0)
+                        cand.vote_count = v
+                        cand.total_votes = tot
+                        cand.vote_ratio = round(v / tot, 3) if tot > 0 else None
+                        if tot > 0:
+                            cand.reasons.append(f"Segment consensus: {v}/{tot} ({int(round((v / tot) * 100))}%)")
+
+            min_auto_score = getattr(settings, "SPEAKER_AUTO_CONFIRM_MIN_SCORE", 0.70)
+            min_auto_margin = getattr(settings, "SPEAKER_AUTO_CONFIRM_MIN_MARGIN", 0.08)
+            min_auto_vote_ratio = getattr(settings, "SPEAKER_AUTO_CONFIRM_MIN_VOTE_RATIO", 0.60)
+            allow_auto = getattr(settings, "ALLOW_AUTO_CONFIRM_SPEAKERS", False)
+
             for i, seg in enumerate(segments):
                 pick = pick_suggestion(candidates_by_cluster.get(seg.cluster_id, []))
                 if pick is None:
                     continue
                 seg.suggestion = SpeakerSuggestion(
-                    person_id=pick.person_id, person_name=pick.person_name, score=pick.score,
-                    margin=pick.margin, band=pick.band, space_id=space_id,
+                    person_id=pick.person_id,
+                    person_name=pick.person_name,
+                    score=pick.score,
+                    margin=pick.margin,
+                    band=pick.band,
+                    space_id=space_id,
+                    vote_ratio=pick.vote_ratio,
+                    vote_count=pick.vote_count,
+                    total_votes=pick.total_votes,
+                    reasons=list(pick.reasons),
                 )
                 seg.suggested_identity = pick.person_name
-                seg.attribution_state = "suggested"
+
+                # Auto-confirm criteria: high fused score, sufficient margin, and voting consensus
+                has_consensus = pick.total_votes is None or pick.total_votes < 2 or (pick.vote_ratio is not None and pick.vote_ratio >= min_auto_vote_ratio)
+                can_auto_confirm = (
+                    allow_auto
+                    and pick.score >= min_auto_score
+                    and pick.margin >= min_auto_margin
+                    and has_consensus
+                )
+
+                if can_auto_confirm:
+                    seg.attribution_state = "confirmed"
+                    seg.confirmed_display_name = pick.person_name
+                    seg.speaker_id = pick.person_id
+                    seg.confirmed_by = "Auto Voice Match (CAM++)"
+                    seg.confirmed_at = datetime.now(timezone.utc)
+                    seg.printable_name = (seg.speech_seconds or 0.0) >= settings.SPEAKER_MIN_PRINTABLE_SPEECH_S
+                else:
+                    seg.attribution_state = "suggested"
+
             suggested_clusters = sum(1 for cid in cluster_ids.values() if pick_suggestion(candidates_by_cluster.get(cid, [])))
             for a, b in merge_suggestions(candidates_by_cluster):
                 logger.info(f"Diarization: clusters {a} and {b} both resemble the same enrolled person (merge suggestion, not applied)")

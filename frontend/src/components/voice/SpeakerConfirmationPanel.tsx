@@ -472,13 +472,23 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
   })();
 
   const similarity =
-    cluster.state === 'suggested' && typeof cluster.match_score === 'number' ? (
-      <p className="text-xs text-amber-900">
-        Similarity: <span className="font-bold">{cluster.match_band ?? 'no_match'}</span>{' '}
-        <span className="tabular-nums">
-          ({cluster.match_score.toFixed(2)} cosine &mdash; a similarity score, not a probability)
-        </span>
-      </p>
+    (cluster.state === 'suggested' || cluster.state === 'confirmed') && typeof cluster.match_score === 'number' ? (
+      <div className="space-y-0.5 text-xs text-slate-700">
+        <p>
+          Similarity: <span className="font-bold">{cluster.match_band ?? 'no_match'}</span>{' '}
+          <span className="tabular-nums">({cluster.match_score.toFixed(2)} cosine)</span>
+          {typeof cluster.vote_ratio === 'number' && cluster.total_votes ? (
+            <span className="ml-2 font-medium text-slate-600">
+              &middot; Consensus: {cluster.vote_count}/{cluster.total_votes} segments ({Math.round(cluster.vote_ratio * 100)}%)
+            </span>
+          ) : null}
+        </p>
+        {cluster.reasons && cluster.reasons.length > 0 && (
+          <p className="text-[11px] text-slate-500 italic">
+            Factors: {cluster.reasons.join(', ')}
+          </p>
+        )}
+      </div>
     ) : null;
 
   return (

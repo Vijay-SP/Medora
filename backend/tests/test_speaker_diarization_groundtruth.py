@@ -36,6 +36,7 @@ os.environ["REQUIRE_LOCAL_LLM"] = "false"
 os.environ["LLM_API_BASE_URL"] = "http://127.0.0.1:9"
 os.environ["WHISPER_DEVICE"] = "cpu"
 os.environ["VOICE_ID_ENABLED"] = "true"
+os.environ["ALLOW_AUTO_CONFIRM_SPEAKERS"] = "false"
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
@@ -376,6 +377,31 @@ def test_unenrolled_voice_gets_no_suggestion():
             assert seg.attribution_state == "anonymous" and seg.suggestion is None, f"unenrolled Zira got {seg.suggestion}"
         else:
             assert seg.suggestion is not None and seg.suggestion.person_name == NAMES["david"]
+
+
+def test_auto_confirm_speakers_when_flag_enabled():
+    """When ALLOW_AUTO_CONFIRM_SPEAKERS is enabled, high-confidence matches are auto-confirmed directly."""
+    david, zira = _enroll("david"), _enroll("zira")
+    old_flag = settings.ALLOW_AUTO_CONFIRM_SPEAKERS
+    try:
+        settings.ALLOW_AUTO_CONFIRM_SPEAKERS = True
+        segments, turns = _diarize(people=[david, zira])
+        mapping = _cluster_to_voice(segments, turns)
+        expected_name = {"david": NAMES["david"], "zira": NAMES["zira"]}
+        dominant = _dominant_clusters(segments)
+        confirmed_count = 0
+        for seg in segments:
+            if seg.cluster_id not in dominant:
+                continue
+            assert seg.attribution_state == "confirmed", f"expected confirmed, got {seg.attribution_state}"
+            assert seg.confirmed_display_name == expected_name[mapping[seg.cluster_id]]
+            assert seg.confirmed_by == "Auto Voice Match (CAM++)"
+            assert seg.suggestion is not None
+            assert seg.suggestion.score >= 0.70
+            confirmed_count += 1
+        assert confirmed_count >= len(segments) - 2
+    finally:
+        settings.ALLOW_AUTO_CONFIRM_SPEAKERS = old_flag
 
 
 # ---------------------------------------------------------------- confirm write path on the real diarization

@@ -146,8 +146,12 @@ class Settings(BaseSettings):
     SPEAKER_MIN_ENROLL_SPEECH_S: float = 20.0  # Total speech across samples required to accept an enrollment
     SPEAKER_MIN_SAMPLE_SPEECH_S: float = 4.0
     SPEAKER_MIN_COHESION: float = 0.55  # Mean pairwise cosine across a person's enrollment samples
-    # There is no code path that confirms a speaker without a reviewer; the flag documents the refusal.
+    # Direct speaker attribution from high-confidence voiceprint matches
     ALLOW_AUTO_CONFIRM_SPEAKERS: bool = False
+    SPEAKER_AUTO_CONFIRM_MIN_SCORE: float = 0.70  # Min fused similarity to auto-attribute
+    SPEAKER_AUTO_CONFIRM_MIN_MARGIN: float = 0.08  # Min margin over runner-up
+    SPEAKER_AUTO_CONFIRM_MIN_VOTE_RATIO: float = 0.60  # Min segment voting consensus
+    SPEAKER_BOUNDARY_REFINE_ENABLED: bool = True
     
     model_config = SettingsConfigDict(
         env_file=(

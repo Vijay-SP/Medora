@@ -441,6 +441,10 @@ export interface SpeakerCluster {
   // Reviewer-label support (absent on backends built before it).
   label_options?: SpeakerLabelOption[]; // built from meeting.attendees
   current_label?: string | null; // the reviewer-assigned label when state is corrected without a profile
+  vote_ratio?: number | null;
+  vote_count?: number | null;
+  total_votes?: number | null;
+  reasons?: string[];
 }
 
 export interface SpeakersResponse {

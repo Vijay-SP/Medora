@@ -65,6 +65,10 @@ class SpeakerSuggestion(BaseModel):
     margin: float = Field(..., description="Top-1 minus top-2 score across enrolled voiceprints")
     band: MatchBand
     space_id: str = Field(..., description="Embedding space the score was computed in")
+    vote_ratio: Optional[float] = Field(None, description="Fraction of segment turns agreeing on this person")
+    vote_count: Optional[int] = Field(None, description="Number of segment turns voting for this person")
+    total_votes: Optional[int] = Field(None, description="Total voting segments in this cluster")
+    reasons: list[str] = Field(default_factory=list, description="Explainable matching factors")
 
 
 class TranscriptSegment(BaseModel):

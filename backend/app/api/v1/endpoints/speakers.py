@@ -89,6 +89,10 @@ class SpeakerCluster(BaseModel):
     unprintable_turns: int = 0
     blocking_reasons: list[str] = Field(default_factory=list)
     merge_suggestion_with: list[str] = Field(default_factory=list)
+    vote_ratio: Optional[float] = Field(None, description="Fraction of segment turns agreeing on this person")
+    vote_count: Optional[int] = Field(None, description="Number of segment turns voting for this person")
+    total_votes: Optional[int] = Field(None, description="Total voting segments in this cluster")
+    reasons: list[str] = Field(default_factory=list, description="Explainable matching factors")
 
 
 class SpeakersResponse(BaseModel):
@@ -306,6 +310,23 @@ class _Context:
             other for other, other_segs in all_clusters.items()
             if other != cluster_id and mine is not None and self.effective_person(other_segs) == mine
         ]
+        vote_ratio = suggestion.vote_ratio if suggestion else None
+        vote_count = suggestion.vote_count if suggestion else None
+        total_votes = suggestion.total_votes if suggestion else None
+        reasons = list(suggestion.reasons) if suggestion else []
+        if not reasons and self.cache is not None:
+            cands = (self.cache[1].get("clusters") or {}).get(cluster_id, {}).get("candidates", [])
+            if cands:
+                cand0 = cands[0]
+                if vote_ratio is None:
+                    vote_ratio = cand0.get("vote_ratio")
+                if vote_count is None:
+                    vote_count = cand0.get("vote_count")
+                if total_votes is None:
+                    total_votes = cand0.get("total_votes")
+                if not reasons:
+                    reasons = list(cand0.get("reasons", []))
+
         return SpeakerCluster(
             cluster_id=cluster_id,
             display_label=cluster_label(cluster_id) or segs[0].speaker,
@@ -327,6 +348,10 @@ class _Context:
             unprintable_turns=len(segs) - printable,
             blocking_reasons=self.blocking_reasons(cluster_id, segs),
             merge_suggestion_with=merge_with,
+            vote_ratio=vote_ratio,
+            vote_count=vote_count,
+            total_votes=total_votes,
+            reasons=reasons,
         )
 
     def response(self) -> SpeakersResponse:

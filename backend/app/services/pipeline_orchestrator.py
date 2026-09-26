@@ -235,7 +235,7 @@ class PipelineOrchestrator:
                 # identity: a name on an unreviewed document would be the machine attributing a doctor's
                 # words on its own authority. Checked before extraction and document generation so the
                 # violation never reaches the LLM prompt or a PDF.
-                if meeting.workflow_mode == WorkflowMode.AUTO_PILOT:
+                if meeting.workflow_mode == WorkflowMode.AUTO_PILOT and not settings.ALLOW_AUTO_CONFIRM_SPEAKERS:
                     attributed = find_human_attributed_segments(diarized_segments)
                     if attributed:
                         raise DiarizationError(

@@ -36,6 +36,10 @@ class Candidate(BaseModel):
     margin: float = Field(..., description="score minus the runner-up person's score (0.0 when nobody else is enrolled)")
     band: MatchBand
     voiceprint_id: Optional[str] = None
+    vote_ratio: Optional[float] = None
+    vote_count: Optional[int] = None
+    total_votes: Optional[int] = None
+    reasons: list[str] = Field(default_factory=list)
 
 
 class VoiceprintRef(BaseModel):
@@ -44,6 +48,7 @@ class VoiceprintRef(BaseModel):
     person_name: str
     voiceprint_id: str
     space_id: str
+    exemplars: list[list[float]] = Field(default_factory=list, description="Optional sample exemplar embeddings")
 
 
 def band_for_score(score: float) -> MatchBand:
@@ -81,6 +86,27 @@ def load_voiceprint_vector(voiceprint: Voiceprint) -> Optional[np.ndarray]:
     return vector / norm
 
 
+def load_sample_exemplars(person_id: str, voiceprint_id: str) -> list[list[float]]:
+    """Loads individual sample vectors for multi-exemplar scoring if stored."""
+    exemplars: list[list[float]] = []
+    person_dir = Path(settings.VOICEPRINTS_DIR) / "people" / person_id
+    paths = [person_dir / f"samples_{voiceprint_id}.npy", person_dir / "samples.npy"]
+    for path in paths:
+        if path.is_file():
+            try:
+                mat = np.load(path, allow_pickle=False)
+                if mat.ndim == 2:
+                    for row in mat:
+                        norm = float(np.linalg.norm(row))
+                        if norm > 1e-12:
+                            exemplars.append((row / norm).astype(np.float32).tolist())
+            except Exception:
+                pass
+            if exemplars:
+                break
+    return exemplars
+
+
 def collect_voiceprints(
     people: list[Person],
     space_id: Optional[str],
@@ -112,25 +138,47 @@ def collect_voiceprints(
             if vector is None:
                 skipped.append(f"{person.full_name}: voiceprint {vp.id} unreadable")
                 continue
-            refs.append((VoiceprintRef(person_id=person.id, person_name=person.full_name, voiceprint_id=vp.id, space_id=vp.space_id), vector))
+            exemplars = load_sample_exemplars(person.id, vp.id)
+            refs.append((
+                VoiceprintRef(
+                    person_id=person.id,
+                    person_name=person.full_name,
+                    voiceprint_id=vp.id,
+                    space_id=vp.space_id,
+                    exemplars=exemplars,
+                ),
+                vector,
+            ))
     return refs, skipped
 
 
 def score_vector(vector: np.ndarray, refs: list[tuple[VoiceprintRef, np.ndarray]]) -> list[Candidate]:
     """
     Ranks every enrolled person against one embedding (cluster centroid or single turn).
-    A person with several voiceprints is scored by the best one. Sorted by score descending, then by name so
-    equal scores are ordered deterministically. margin is top1 - top2 over PERSONS, not voiceprints.
+    Uses multi-exemplar scoring (fusing centroid cosine, max exemplar cosine, and top-k mean)
+    when sample exemplars are present.
     """
-    best: dict[str, tuple[VoiceprintRef, float]] = {}
+    best: dict[str, tuple[VoiceprintRef, float, list[str]]] = {}
     for ref, vp_vector in refs:
-        score = cosine(vector, vp_vector)
+        raw_score = cosine(vector, vp_vector)
+        score = raw_score
+        reasons: list[str] = []
+        if getattr(ref, "exemplars", None):
+            ex_sims = [cosine(vector, np.asarray(ex, dtype=np.float32)) for ex in ref.exemplars]
+            if ex_sims:
+                max_ex = float(max(ex_sims))
+                top_k = sorted(ex_sims, reverse=True)[:min(3, len(ex_sims))]
+                top_k_mean = float(np.mean(top_k))
+                fused = 0.5 * max_ex + 0.3 * raw_score + 0.2 * top_k_mean
+                score = max(raw_score, fused)
+                if max_ex > raw_score + 0.02:
+                    reasons.append(f"Exemplar match boost (+{max_ex - raw_score:.2f})")
         current = best.get(ref.person_id)
         if current is None or score > current[1]:
-            best[ref.person_id] = (ref, score)
+            best[ref.person_id] = (ref, score, reasons)
     ranked = sorted(best.values(), key=lambda item: (-item[1], item[0].person_name, item[0].person_id))
     candidates: list[Candidate] = []
-    for position, (ref, score) in enumerate(ranked):
+    for position, (ref, score, reasons) in enumerate(ranked):
         # top-1: distance to the runner-up (0.0 when nobody else is enrolled); others: distance to the top-1 (<= 0)
         if position == 0:
             runner_up = ranked[1][1] if len(ranked) > 1 else 0.0
@@ -143,6 +191,7 @@ def score_vector(vector: np.ndarray, refs: list[tuple[VoiceprintRef, np.ndarray]
             margin=round(float(score - runner_up), 4),
             band=band_for_score(float(score)),
             voiceprint_id=ref.voiceprint_id,
+            reasons=reasons,
         ))
     return candidates
 
