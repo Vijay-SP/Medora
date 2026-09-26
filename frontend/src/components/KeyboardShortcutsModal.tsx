@@ -65,6 +65,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({ 
     { key: 'O', description: 'Open email outbox drawer' },
     { key: '1', description: 'Switch to Official Minutes (MoM) tab' },
     { key: '2', description: 'Switch to Multilingual Transcript tab' },
+    { key: '3', description: 'Switch to Speakers tab (when voice identification is enabled)' },
     { key: '?', description: 'Show / Hide keyboard shortcuts' },
     { key: 'Esc', description: 'Close active modal or drawer' },
   ];

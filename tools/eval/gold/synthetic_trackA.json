@@ -1,0 +1,64 @@
+{
+  "name": "synthetic_trackA",
+  "track": "A",
+  "description": "Hand-written 11-line RO/RU/EN fragment (corrected-transcript track). One firm decision stated in Russian and confirmed in Romanian, one hedged proposal that must NOT become a decision, two actions with verbatim owner mention / deadline phrases, one risk. Segment ids are the citation keys the scorer maps minutes evidence back to.",
+  "meeting": {
+    "title": "Comitet Medical - Protocol antibioterapie ATI",
+    "meeting_type": "medical",
+    "scheduled_at": "2026-09-23T10:00:00",
+    "attendees": [
+      {"name": "Dr. Elena Ceban", "role": "Chirurg Șef", "email": "elena.ceban@medpark.md"},
+      {"name": "Dr. Mihail Popov", "role": "Șef ATI", "email": "mihail.popov@medpark.md"},
+      {"name": "Dr. Ion Popescu", "role": "Medic ATI", "email": "ion.popescu@medpark.md"},
+      {"name": "Sarah Mitchell", "role": "Clinical Pharmacist", "email": "sarah.mitchell@medpark.md"}
+    ]
+  },
+  "segments": [
+    {"index": 0,  "id": "seg_00", "speaker": "Speaker 1", "start": 0.0,  "end": 6.0,  "language": "ro", "text": "Bună dimineața. Începem ședința comitetului medical cu subiectul protocolului de antibioterapie în ATI."},
+    {"index": 1,  "id": "seg_01", "speaker": "Speaker 2", "start": 6.2,  "end": 12.0, "language": "ru", "text": "Да, я посмотрел последние данные по резистентности. Ситуация в реанимации сложная."},
+    {"index": 2,  "id": "seg_02", "speaker": "Speaker 1", "start": 12.3, "end": 18.0, "language": "ro", "text": "Poate ar fi bine să discutăm și despre extinderea secției de terapie intensivă la anul."},
+    {"index": 3,  "id": "seg_03", "speaker": "Speaker 2", "start": 18.2, "end": 22.0, "language": "ru", "text": "Возможно, но это отдельный вопрос бюджета."},
+    {"index": 4,  "id": "seg_04", "speaker": "Speaker 2", "start": 22.5, "end": 29.0, "language": "ru", "text": "Решили: утверждаем новый протокол антибиотикотерапии для реанимации с понедельника."},
+    {"index": 5,  "id": "seg_05", "speaker": "Speaker 1", "start": 29.2, "end": 35.0, "language": "ro", "text": "Confirm, aprobăm protocolul nou de antibioterapie pentru ATI, intră în vigoare de luni."},
+    {"index": 6,  "id": "seg_06", "speaker": "Speaker 1", "start": 35.3, "end": 41.0, "language": "ro", "text": "Atunci doctorul Popescu va actualiza ghidul clinic și va instrui asistentele până luni."},
+    {"index": 7,  "id": "seg_07", "speaker": "Speaker 3", "start": 41.5, "end": 46.0, "language": "en", "text": "I will send the updated dosage tables to all departments by Friday."},
+    {"index": 8,  "id": "seg_08", "speaker": "Speaker 2", "start": 46.3, "end": 52.0, "language": "ru", "text": "Есть риск: запасы меропенема на складе заканчиваются, нужно срочно проверить."},
+    {"index": 9,  "id": "seg_09", "speaker": "Speaker 1", "start": 52.2, "end": 55.0, "language": "ro", "text": "Bine, notăm riscul cu stocul de meropenem."},
+    {"index": 10, "id": "seg_10", "speaker": "Speaker 1", "start": 55.2, "end": 58.0, "language": "ro", "text": "Mulțumesc tuturor, închidem ședința."}
+  ],
+  "proposal_segments": [2],
+  "decisions": [
+    {
+      "decision": "Se aprobă noul protocol de antibioterapie pentru ATI, în vigoare de luni.",
+      "category": "protocol",
+      "evidence_idx": [4, 5]
+    }
+  ],
+  "action_items": [
+    {
+      "task": "Actualizarea ghidului clinic și instruirea asistentelor conform noului protocol.",
+      "owner": "Dr. Ion Popescu",
+      "owner_source": "roster",
+      "owner_mention": "doctorul Popescu",
+      "deadline_phrase": "până luni",
+      "deadline_date": "2026-09-28",
+      "evidence_idx": [6]
+    },
+    {
+      "task": "Trimiterea tabelelor actualizate de dozare către toate secțiile.",
+      "owner": "Speaker 3",
+      "owner_source": "speaker",
+      "owner_mention": null,
+      "deadline_phrase": "by Friday",
+      "deadline_date": "2026-09-25",
+      "evidence_idx": [7]
+    }
+  ],
+  "risks_and_questions": [
+    {
+      "item_type": "risk",
+      "description": "Stocul de meropenem din depozit se epuizează; este necesară o verificare urgentă.",
+      "evidence_idx": [8]
+    }
+  ]
+}

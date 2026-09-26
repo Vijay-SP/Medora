@@ -13,6 +13,14 @@ class BaseExtractor(ABC):
     """Abstract interface for extracting structured, evidence-linked minutes."""
 
     @abstractmethod
+    async def preflight(self) -> str:
+        """
+        Confirms the extraction backend is serving BEFORE expensive pipeline stages run.
+        Returns a provenance string for the minutes; raises LLMUnavailable when policy forbids continuing.
+        """
+        pass
+
+    @abstractmethod
     async def extract_minutes(self, meeting: Meeting, transcript: Transcript) -> MinutesOfMeeting:
         """
         Processes transcript segments and extracts structured decisions, actions, owners, and risks.

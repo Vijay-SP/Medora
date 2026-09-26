@@ -1,0 +1,50 @@
+# Medpark extraction model — served locally by Ollama (http://127.0.0.1:11434)
+#
+# Base: Qwen3-4B-Instruct-2507, Q4_K_M GGUF (bartowski), ~2.5 GB.
+# Chosen because it is the most accurate RO/RU/EN instruction model that fits FULLY in the
+# ~3 GB of VRAM free on the RTX 3050 Ti (4 GB) after the Windows desktop, which is what keeps
+# a 60-minute meeting inside the brief's 15-minute end-to-end budget. Non-thinking variant:
+# no <think> tokens are wasted on extraction. sha256 of the GGUF blob, verified 2026-09-25:
+#   497a8cc6e20c0cad0f441c9c0503e1624f45447c7310f84eb463aec9ad14f365
+#
+# Build:   ollama create medpark-extractor -f deploy/ollama/Modelfile
+# Verify:  ollama run medpark-extractor "Răspunde cu un JSON: {\"ok\": true}"
+#          ollama ps   -> must show 100% GPU for the 15-minute budget to hold
+#
+# 16 GB hospital-server profile: swap FROM to hf.co/bartowski/Qwen_Qwen3-14B-GGUF:Q4_K_M
+# and raise num_ctx to 12288; nothing else changes.
+
+FROM hf.co/bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF:Q4_K_M
+
+# Plain ChatML. Ollama auto-assigns its thinking-aware "qwen3" family template to this GGUF,
+# which injects an empty <think></think> block into the assistant turn; the 2507 *Instruct*
+# variant was never trained on think tags and answers that block with an immediate EOS
+# (verified: eval_count=1, empty content, while the same prompt as raw ChatML answers normally).
+TEMPLATE """{{- if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{- range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+PARAMETER stop <|im_end|>
+PARAMETER stop <|im_start|>
+
+# Force every layer (36 blocks + output head) onto the GPU. Ollama's automatic estimate
+# offloads a third of the model to CPU on this card while leaving ~1.4 GB of VRAM unused,
+# and a partially offloaded 4B decodes ~5x slower. Requires the server to run with
+# OLLAMA_FLASH_ATTENTION=1 and OLLAMA_KV_CACHE_TYPE=q8_0 (halves the KV cache) to fit.
+PARAMETER num_gpu 37
+
+# Context is sized to the VRAM budget: weights 2.33 GiB + KV cache @4096 + compute buffers
+# must stay under the free VRAM or Ollama silently offloads layers to CPU and decode drops
+# from ~40 tok/s to ~6 tok/s. The app never sends more than ~2900 prompt tokens per call
+# (map/reduce chunking), so 4096 is sufficient, not a limit on meeting length.
+PARAMETER num_ctx 4096
+
+# Extraction must be reproducible for the jury: greedy decoding with a fixed seed.
+PARAMETER temperature 0
+PARAMETER top_k 1
+PARAMETER seed 1234
+
+# Hard cap on a single response; a repetition loop cannot consume the whole context.
+PARAMETER num_predict 1100

@@ -1,0 +1,36 @@
+# Keep the Docker build context small and free of local state, secrets and model weights.
+# The build compiles the frontend from source and installs Python deps from requirements.txt,
+# so no local environment, artifact or recording needs to be sent to the daemon.
+
+# Python / Node environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Local runtime state: uploads, exports, JSON store, model weights, recordings
+data/
+.audit/
+.ccb-traces/
+
+# Version control, IDE and agent caches
+.git/
+.gitignore
+.idea/
+.vscode/
+.codex/
+
+# Credentials and local overrides
+.env
+.env.*
+*.pem
+*.key
+
+# Docs and build scratch
+*.log

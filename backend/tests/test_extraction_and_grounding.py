@@ -1,16 +1,47 @@
 """
 Tests for multilingual extraction, code-switching, and evidence grounding.
+
+Runs OFFLINE on the heuristic fallback path: REQUIRE_LOCAL_LLM=false and LLM_FALLBACK_MODE=heuristic
+are forced and the LLM endpoint is pointed at a dead port BEFORE any app import (the Ollama client
+binds its base URL at import), so the test is deterministic whether or not an Ollama server is
+running. The heuristic output is a degraded draft: is_degraded must be True.
 """
 
-import asyncio
-from datetime import datetime
-from app.models.meeting import Meeting, MeetingType, Attendee
-from app.models.transcript import Transcript, TranscriptSegment
-from app.services.extraction.llm_engine import extraction_engine
-from app.services.extraction.validator import evidence_validator
+import os
+import tempfile
+from pathlib import Path
+
+_ISOLATED_ROOT = Path(os.environ.get("DATA_DIR") or os.path.join(tempfile.mkdtemp(prefix="medpark_test_grounding_"), "data"))
+os.environ.setdefault("DATA_DIR", str(_ISOLATED_ROOT))
+os.environ.setdefault("UPLOADS_DIR", str(_ISOLATED_ROOT / "uploads"))
+os.environ.setdefault("EXPORTS_DIR", str(_ISOLATED_ROOT / "exports"))
+os.environ.setdefault("FIXTURES_DIR", str(_ISOLATED_ROOT / "fixtures"))
+os.environ["SMTP_HOST"] = "127.0.0.1"
+os.environ["SMTP_PORT"] = "9"
+os.environ["ALLOW_SIMULATED_DELIVERY"] = "false"
+os.environ["REQUIRE_LOCAL_LLM"] = "false"
+os.environ["LLM_FALLBACK_MODE"] = "heuristic"
+os.environ["LLM_API_BASE_URL"] = "http://127.0.0.1:9"
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
+import asyncio  # noqa: E402
+from datetime import datetime  # noqa: E402
+from app.core.config import settings  # noqa: E402
+from app.models.meeting import Meeting, MeetingType, Attendee  # noqa: E402
+from app.models.transcript import Transcript, TranscriptSegment  # noqa: E402
+from app.services.extraction.llm_engine import extraction_engine  # noqa: E402
+from app.services.extraction.llm_client import llm_client  # noqa: E402
+from app.services.extraction.heuristic_extractor import DEGRADED_MODEL_VERSION  # noqa: E402
 
 
 def test_code_switched_extraction_and_grounding():
+    # Isolation preconditions: degraded policy on, no reachable LLM, no reachable mail server
+    assert settings.REQUIRE_LOCAL_LLM is False and settings.LLM_FALLBACK_MODE == "heuristic"
+    assert llm_client.base_url == "http://127.0.0.1:9"
+    assert settings.SMTP_PORT == 9
+
     # Construct a realistic Medpark code-switched meeting transcript
     # Segment 1 (RO): Opening and proposal
     seg1 = TranscriptSegment(
@@ -62,8 +93,17 @@ def test_code_switched_extraction_and_grounding():
         ]
     )
 
+    # Preflight reports the degraded path instead of raising, because policy explicitly allows it
+    assert asyncio.run(extraction_engine.preflight()) == "heuristic-fallback"
+
     # Run extraction
     minutes = asyncio.run(extraction_engine.extract_minutes(meeting, transcript))
+
+    # The heuristic parser produced this: it is a degraded, non-dispatchable draft and says so
+    assert minutes.is_degraded is True
+    assert minutes.model_version == DEGRADED_MODEL_VERSION
+    assert any("NOTĂ AUDIT" in r.description for r in minutes.risks_and_questions)
+    assert minutes.extraction_stats.get("engine") == "heuristic"
 
     # Verify structured outputs
     assert len(minutes.decisions) >= 1

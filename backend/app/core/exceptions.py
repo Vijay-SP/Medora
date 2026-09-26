@@ -31,6 +31,11 @@ class ExtractionError(MedparkBaseException):
     pass
 
 
+class LLMUnavailable(ExtractionError):
+    """Raised when the local LLM server or the configured model is not serving."""
+    pass
+
+
 class GroundingValidationError(MedparkBaseException):
     """Raised when extracted decisions/actions lack valid verbatim audio evidence."""
     pass

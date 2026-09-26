@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Meeting, Transcript, MinutesOfMeeting, MeetingCreate } from './types';
+import { Meeting, Transcript, MinutesOfMeeting, MeetingCreate, ReadinessResponse } from './types';
 import { apiClient } from './api/client';
 import { useToast } from './components/Toast';
 import { Navbar } from './components/Navbar';
@@ -13,8 +13,13 @@ import { ReviewApprovalModal } from './components/ReviewApprovalModal';
 import { MeetingIntakeModal } from './components/MeetingIntakeModal';
 import { DeliveryOutboxDrawer } from './components/DeliveryOutboxDrawer';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
-import { WaveformPlayerRef } from './components/WaveformPlayer';
-import { Trash2, AlertCircle } from 'lucide-react';
+import { WaveformPlayer, WaveformPlayerRef } from './components/WaveformPlayer';
+import { PeoplePage } from './components/voice/PeoplePage';
+import { SpeakerConfirmationPanel } from './components/voice/SpeakerConfirmationPanel';
+import { Trash2, AlertCircle, Users, FileText, Layers, ChevronLeft } from 'lucide-react';
+
+// Workspace tabs. 'speakers' exists only while /ready reports voice identification as enabled.
+type WorkspaceTab = 'minutes' | 'transcript' | 'speakers';
 
 const copyTextToClipboard = async (text: string): Promise<boolean> => {
   if (window.isSecureContext && navigator.clipboard?.writeText) {
@@ -44,6 +49,14 @@ const copyTextToClipboard = async (text: string): Promise<boolean> => {
   }
 };
 
+// Short reviewer-facing tag for how an action owner was resolved (see ActionItem.owner_source).
+const OWNER_SOURCE_LABELS: Record<string, string> = {
+  roster: 'roster',
+  mention: 'named in audio, not on roster',
+  speaker: 'anonymous speaker label',
+  unassigned: 'unassigned',
+};
+
 const PIPELINE_STAGES: { key: string; label: string }[] = [
   { key: 'preprocessing', label: 'Audio preprocessing' },
   { key: 'transcribing', label: 'Transcription' },
@@ -67,8 +80,15 @@ export const App: React.FC = () => {
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [minutes, setMinutes] = useState<MinutesOfMeeting | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'minutes' | 'transcript'>('minutes');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>('minutes');
   const [playbackTime, setPlaybackTime] = useState<number>(0);
+
+  // Voice identification: People & Voices replaces the page area; the Speakers tab lives in the
+  // workspace. Both exist only when the backend reports the feature enabled AND the embedder present.
+  const [view, setView] = useState<'workspace' | 'people'>('workspace');
+  const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
+  const voiceIdEnabled = Boolean(readiness?.voice_id?.enabled);
+  const [speakersReloadKey, setSpeakersReloadKey] = useState(0);
 
   // Search & Filter
   const [meetingSearchQuery, setMeetingSearchQuery] = useState('');
@@ -139,6 +159,7 @@ export const App: React.FC = () => {
             if (interval) clearInterval(interval);
             loadMeetingData(selectedMeetingId);
             loadMeetings();
+            setSpeakersReloadKey((k) => k + 1);
           } else if (status.status !== 'idle') {
             pipelineStartedIdRef.current = null;
           }
@@ -170,6 +191,9 @@ export const App: React.FC = () => {
         return;
       }
 
+      // People & Voices owns its own dialogs (consent drawer, delete confirmations) and Escape handling.
+      if (view === 'people') return;
+
       const activeElement = document.activeElement as HTMLElement | null;
       const activeTag = activeElement?.tagName;
       if (
@@ -199,12 +223,19 @@ export const App: React.FC = () => {
         setActiveTab('minutes');
       } else if (e.key === '2') {
         setActiveTab('transcript');
+      } else if (e.key === '3' && voiceIdEnabled) {
+        setActiveTab('speakers');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isIntakeOpen, isApprovalOpen, isOutboxOpen, isShortcutsOpen, meetingToDelete]);
+  }, [isIntakeOpen, isApprovalOpen, isOutboxOpen, isShortcutsOpen, meetingToDelete, view, voiceIdEnabled]);
+
+  // The Speakers tab cannot outlive the feature flag: fall back to the minutes when it turns off.
+  useEffect(() => {
+    if (!voiceIdEnabled && activeTab === 'speakers') setActiveTab('minutes');
+  }, [voiceIdEnabled, activeTab]);
 
   useEffect(() => {
     if (meetingToDelete) deleteCancelRef.current?.focus();
@@ -448,16 +479,40 @@ export const App: React.FC = () => {
     waveformRef.current?.seekToSeconds(time);
   };
 
+  // Bounded playback for speaker review clips; a bare start behaves like a plain seek.
+  const handlePlayRange = (start: number, end?: number) => {
+    if (typeof end === 'number' && end > start) {
+      waveformRef.current?.playRange(start, end);
+    } else {
+      waveformRef.current?.seekToSeconds(start);
+    }
+  };
+
+  // The transcript viewer renders seg.speaker; feed it the backend's display_speaker (a confirmed
+  // name only on printable turns, the anonymous label otherwise) without widening its props.
+  const transcriptForDisplay: Transcript | null = transcript
+    ? {
+        ...transcript,
+        segments: transcript.segments.map((s) => ({ ...s, speaker: s.display_speaker ?? s.speaker })),
+      }
+    : null;
+
   const handleCopyFullMoM = async () => {
     if (!minutes || !selectedMeeting) return;
     const lines: string[] = [
       `# ${selectedMeeting.title}`,
       `**Data / Date:** ${new Date(selectedMeeting.scheduled_at).toLocaleString()}`,
       `**Tip / Type:** ${selectedMeeting.meeting_type.toUpperCase()} | **Rev.** ${minutes.revision}`,
-      '',
-      '## Executive Summary (RO)',
-      minutes.summary_ro,
+      `**Model / Engine:** ${minutes.model_version}`,
     ];
+    // Provenance travels with the text: a degraded draft must never be pasted as if validated.
+    if (minutes.is_degraded) {
+      lines.push('', '> DRAFT NEVALIDAT - LLM LOCAL INDISPONIBIL (heuristic fallback, not dispatchable)');
+    }
+    if (minutes.needs_name_review) {
+      lines.push('', '> Verificare nume necesara - a non-roster owner or proper noun needs confirmation');
+    }
+    lines.push('', '## Executive Summary (RO)', minutes.summary_ro);
 
     if (minutes.summary_en) {
       lines.push('', '## Executive Summary (EN)', minutes.summary_en);
@@ -474,8 +529,12 @@ export const App: React.FC = () => {
       lines.push('', '## Action Items');
       minutes.action_items.forEach((a, idx) => {
         const owner = a.owner || 'Unassigned';
+        const ownerHint =
+          a.owner_source && a.owner_source !== 'roster' && a.owner_source !== 'unassigned'
+            ? ` (${OWNER_SOURCE_LABELS[a.owner_source] || a.owner_source})`
+            : '';
         const deadline = a.deadline_date || a.deadline_phrase || 'TBD';
-        lines.push(`${idx + 1}. **${a.task}** - *Responsible:* ${owner} | *Deadline:* ${deadline}`);
+        lines.push(`${idx + 1}. **${a.task}** - *Responsible:* ${owner}${ownerHint} | *Deadline:* ${deadline}`);
       });
     }
 
@@ -494,6 +553,12 @@ export const App: React.FC = () => {
     setReviewStatusFilter('all');
   };
 
+  // Review flags on the loaded revision, surfaced above the workspace so they cannot be missed.
+  const failedChunkCount = minutes?.failed_chunks?.length ?? 0;
+  const showReviewFlags = Boolean(
+    minutes && (minutes.is_degraded || minutes.needs_name_review || failedChunkCount > 0)
+  );
+
   const pendingCount = meetings.filter(
     (m) =>
       m.review_status === 'pending_review' ||
@@ -502,6 +567,7 @@ export const App: React.FC = () => {
   ).length;
 
   const getPageTitle = (page: AppPage): string => {
+    if (view === 'people') return 'People & Voices';
     switch (page) {
       case 'dashboard':
         return 'Executive Dashboard';
@@ -530,10 +596,12 @@ export const App: React.FC = () => {
       <Sidebar
         currentPage={currentPage}
         onNavigate={(page) => {
+          setView('workspace');
           setCurrentPage(page);
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onStartLiveMeeting={() => {
+          setView('workspace');
           setCurrentPage('live');
         }}
         onUploadRecording={() => {
@@ -555,11 +623,17 @@ export const App: React.FC = () => {
             setIntakeInitialMode('upload');
             setIsIntakeOpen(true);
           }}
-          onOpenDeliveries={() => setCurrentPage('deliveries')}
+          onOpenDeliveries={() => {
+            setView('workspace');
+            setCurrentPage('deliveries');
+          }}
           onOpenShortcuts={() => setIsShortcutsOpen(true)}
           onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
           currentPageTitle={getPageTitle(currentPage)}
           meetingsCount={meetings.length}
+          onOpenPeople={() => setView((v) => (v === 'people' ? 'workspace' : 'people'))}
+          isPeopleActive={view === 'people'}
+          onReadinessChange={setReadiness}
         />
 
         {/* Action-required Error Banner */}
@@ -581,10 +655,54 @@ export const App: React.FC = () => {
           </div>
         )}
 
+        {/* Extraction provenance / review flags banner (workspace only) */}
+        {view === 'workspace' && currentPage === 'workspace' && minutes && showReviewFlags && (
+          <div
+            role="alert"
+            className={`m-4 sm:m-6 lg:m-8 mb-0 p-4 rounded-2xl border flex items-start gap-3 shadow-xs ${
+              minutes.is_degraded
+                ? 'bg-rose-50 border-rose-200 text-rose-800'
+                : 'bg-amber-50 border-amber-300 text-amber-900'
+            }`}
+          >
+            <AlertCircle
+              className={`w-5 h-5 flex-shrink-0 ${minutes.is_degraded ? 'text-rose-600' : 'text-amber-700'}`}
+            />
+            <div className="min-w-0 space-y-1 text-xs">
+              <p className="text-[11px] font-bold uppercase tracking-wider">
+                {minutes.is_degraded
+                  ? 'Unvalidated draft - local LLM was unavailable'
+                  : 'Review flags on this revision'}
+              </p>
+              <ul className="list-disc list-inside font-medium leading-relaxed space-y-0.5">
+                {minutes.is_degraded && (
+                  <li>
+                    Produced by the rule-based fallback; sign-off and email dispatch are blocked until
+                    the pipeline is re-run with the local LLM.
+                  </li>
+                )}
+                {minutes.needs_name_review && (
+                  <li>Name review needed: an action owner or proper noun is not on the attendee roster.</li>
+                )}
+                {failedChunkCount > 0 && (
+                  <li>
+                    {failedChunkCount} transcript fragment{failedChunkCount === 1 ? '' : 's'} failed
+                    extraction - see the audit note under Risks &amp; Questions.
+                  </li>
+                )}
+              </ul>
+              <p className="text-[11px] font-mono break-all opacity-80">Model: {minutes.model_version}</p>
+            </div>
+          </div>
+        )}
+
         {/* Dynamic Page Views */}
         <main id="main-content" className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          {/* People & Voices: full-width, in place of whichever page was open */}
+          {view === 'people' && <PeoplePage onBack={() => setView('workspace')} />}
+
           {/* Page 1: Dashboard View */}
-          {currentPage === 'dashboard' && (
+          {view === 'workspace' && currentPage === 'dashboard' && (
             <DashboardView
               meetings={meetings}
               selectedMeetingId={selectedMeetingId}
@@ -609,15 +727,132 @@ export const App: React.FC = () => {
             />
           )}
 
+          {/* Speaker identification entry point: the workspace view owns the Minutes/Transcript
+              tab strip, so the third tab is reached from here (or with the "3" key). */}
+          {view === 'workspace' &&
+            currentPage === 'workspace' &&
+            voiceIdEnabled &&
+            selectedMeeting &&
+            transcript &&
+            activeTab !== 'speakers' && (
+              <div className="max-w-6xl mx-auto mb-6 bg-white rounded-2xl border border-slate-200 shadow-xs px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start space-x-2.5 min-w-0">
+                  <Users className="w-4 h-4 text-medpark-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    <span className="font-bold text-slate-800">Speaker identification.</span> Review who
+                    is speaking before sign-off; names reach the document only after your confirmation.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('speakers')}
+                  title="Speakers (3)"
+                  className="inline-flex items-center space-x-1.5 px-3 py-2 text-xs font-bold text-medpark-700 bg-medpark-50 hover:bg-medpark-100 border border-medpark-200 rounded-xl transition-colors flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500"
+                >
+                  <Users className="w-3.5 h-3.5" aria-hidden="true" />
+                  <span>Open Speakers tab</span>
+                  <kbd className="ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-white border border-medpark-200 rounded">3</kbd>
+                </button>
+              </div>
+            )}
+
+          {/* Page 2a: Speakers tab of the workspace (page-shaped; the waveform stays mounted here so
+              review clips can play through the same player ref) */}
+          {view === 'workspace' && currentPage === 'workspace' && activeTab === 'speakers' && selectedMeeting && (
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <button
+                    onClick={() => setCurrentPage('dashboard')}
+                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                    title="Return to Dashboard view"
+                  >
+                    <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                    <span>Dashboard</span>
+                  </button>
+                  <span className="text-slate-300 hidden sm:inline" aria-hidden="true">|</span>
+                  <h2 className="text-sm font-black text-slate-900 truncate">{selectedMeeting.title}</h2>
+                  {minutes && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 tabular-nums flex-shrink-0">
+                      Revision {minutes.revision}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {selectedMeeting.original_audio_path && (
+                <WaveformPlayer
+                  ref={waveformRef}
+                  audioUrl={apiClient.getAudioStreamUrl(selectedMeeting.id)}
+                  onTimeUpdate={(t) => {
+                    const bucket = Math.floor(t * 4);
+                    if (bucket === playbackBucketRef.current) return;
+                    playbackBucketRef.current = bucket;
+                    setPlaybackTime(t);
+                  }}
+                />
+              )}
+
+              <div role="tablist" aria-label="Meeting workspace tabs" className="border-b border-slate-200 flex space-x-6">
+                <button
+                  role="tab"
+                  id="tab-minutes"
+                  aria-selected={false}
+                  onClick={() => setActiveTab('minutes')}
+                  title="Official Minutes (1)"
+                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-colors"
+                >
+                  <FileText className="w-4 h-4" aria-hidden="true" />
+                  <span>Official Minutes (MoM)</span>
+                </button>
+                <button
+                  role="tab"
+                  id="tab-transcript"
+                  aria-selected={false}
+                  onClick={() => setActiveTab('transcript')}
+                  title="Transcript (2)"
+                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-colors"
+                >
+                  <Layers className="w-4 h-4" aria-hidden="true" />
+                  <span>Multilingual Transcript &amp; Speakers</span>
+                </button>
+                <button
+                  role="tab"
+                  id="tab-speakers"
+                  aria-selected={true}
+                  title="Speakers (3)"
+                  className="pb-3 text-sm font-bold flex items-center space-x-2 border-b-2 border-medpark-500 text-medpark-600"
+                >
+                  <Users className="w-4 h-4" aria-hidden="true" />
+                  <span>Speakers</span>
+                </button>
+              </div>
+
+              <div role="tabpanel" id="panel-speakers" aria-labelledby="tab-speakers">
+                <SpeakerConfirmationPanel
+                  meetingId={selectedMeeting.id}
+                  revision={minutes?.revision ?? null}
+                  onSeek={handlePlayRange}
+                  currentTime={playbackTime}
+                  reloadKey={speakersReloadKey}
+                  onAttributionChanged={() => {
+                    loadMeetingData(selectedMeeting.id);
+                    loadMeetings();
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Page 2: Session Workspace View */}
-          {currentPage === 'workspace' && (
+          {view === 'workspace' && currentPage === 'workspace' && activeTab !== 'speakers' && (
             <SessionWorkspaceView
               meetings={meetings}
               selectedMeeting={selectedMeeting}
               onSelectMeeting={handleSelectMeeting}
               onBackToDashboard={() => setCurrentPage('dashboard')}
               minutes={minutes}
-              transcript={transcript}
+              transcript={transcriptForDisplay}
               isProcessing={isProcessing}
               pipelineProgress={pipelineProgress}
               pipelineStage={pipelineStage}
@@ -649,7 +884,7 @@ export const App: React.FC = () => {
           )}
 
           {/* Page 3: Live Meeting Studio */}
-          {currentPage === 'live' && (
+          {view === 'workspace' && currentPage === 'live' && (
             <LiveMeetingStudio
               onMeetingRecorded={async (payload, file) => {
                 await handleCreateMeeting(payload, file);
@@ -660,10 +895,10 @@ export const App: React.FC = () => {
           )}
 
           {/* Page 4: Deliveries & Outbox */}
-          {currentPage === 'deliveries' && <DeliveriesView />}
+          {view === 'workspace' && currentPage === 'deliveries' && <DeliveriesView />}
 
           {/* Page 5: System & Settings */}
-          {currentPage === 'settings' && <SettingsView />}
+          {view === 'workspace' && currentPage === 'settings' && <SettingsView />}
         </main>
       </div>
 

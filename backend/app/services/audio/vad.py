@@ -4,6 +4,7 @@ Segments continuous meeting audio along speech pauses to isolate code-switching 
 """
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
 import numpy as np
 import soundfile as sf
@@ -34,6 +35,25 @@ class VoiceActivityDetector:
         self.min_speech_duration = min_speech_duration
         self.max_chunk_duration = max_chunk_duration
         self.energy_threshold_ratio = energy_threshold_ratio
+
+    def _split_long_segment(self, segment: SpeechSegment) -> list[SpeechSegment]:
+        """
+        Divides an uninterrupted speech run longer than max_chunk_duration into equal bounded
+        sub-chunks. Merging alone cannot bound a chunk: a speaker talking without a qualifying
+        pause produces a single raw segment of arbitrary length.
+        """
+        if segment.duration_sec <= self.max_chunk_duration:
+            return [segment]
+
+        parts = math.ceil(segment.duration_sec / self.max_chunk_duration)
+        part_duration = segment.duration_sec / parts
+
+        chunks: list[SpeechSegment] = []
+        for idx in range(parts):
+            chunk_start = segment.start_sec + (idx * part_duration)
+            chunk_end = segment.end_sec if idx == parts - 1 else chunk_start + part_duration
+            chunks.append(SpeechSegment(chunk_start, chunk_end, chunk_end - chunk_start))
+        return chunks
 
     def detect_segments(self, wav_path: Path) -> list[SpeechSegment]:
         """
@@ -86,8 +106,8 @@ class VoiceActivityDetector:
             if (seg_end - seg_start) >= self.min_speech_duration:
                 raw_segments.append(SpeechSegment(seg_start, seg_end, seg_end - seg_start))
 
-        # Merge segments separated by silences shorter than min_silence_duration
-        # Split segments exceeding max_chunk_duration to keep Whisper chunks bounded
+        # Merge segments separated by silences shorter than min_silence_duration, then split any
+        # run still exceeding max_chunk_duration to keep Whisper chunks bounded
         refined: list[SpeechSegment] = []
         if not raw_segments:
             # Fallback: divide into 10s uniform blocks if entire file is below energy threshold
@@ -112,8 +132,14 @@ class VoiceActivityDetector:
                 current = next_seg
         refined.append(current)
 
-        logger.info(f"VAD partitioned {total_duration:.2f}s audio into {len(refined)} bounded speech segments.")
-        return refined
+        # Enforce the chunk budget on the merged result: any run still longer than
+        # max_chunk_duration is force-split so Whisper never receives an unbounded window.
+        bounded: list[SpeechSegment] = []
+        for segment in refined:
+            bounded.extend(self._split_long_segment(segment))
+
+        logger.info(f"VAD partitioned {total_duration:.2f}s audio into {len(bounded)} bounded speech segments.")
+        return bounded
 
 
 vad_detector = VoiceActivityDetector()

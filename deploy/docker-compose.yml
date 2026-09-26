@@ -14,8 +14,12 @@ services:
       - DISABLE_TELEMETRY=true
       - SMTP_HOST=mailpit
       - SMTP_PORT=1025
+      # Delivery is routed through Mailpit so the run can be inspected locally. The orchestrator
+      # only selects n8n when BOTH keys agree, so they are declared together: flipping to the
+      # automation engine means DELIVERY_CHANNEL=n8n plus N8N_ENABLED=true.
+      - DELIVERY_CHANNEL=smtp
       - N8N_WEBHOOK_URL=http://n8n:5678/webhook/medpark-mom
-      - N8N_ENABLED=true
+      - N8N_ENABLED=false
     volumes:
       - ../data:/app/data
     depends_on:
@@ -26,8 +30,10 @@ services:
     container_name: medpark-mailpit
     restart: unless-stopped
     ports:
-      - "1025:1025"   # Standard SMTP port
-      - "8025:8025"   # Web UI for jury inspection
+      # Loopback only: an unauthenticated mail catcher holding meeting minutes must not be
+      # reachable from the hospital network. Set MP_UI_AUTH before widening this binding.
+      - "127.0.0.1:1025:1025"   # Standard SMTP port
+      - "127.0.0.1:8025:8025"   # Web UI for jury inspection
     environment:
       - MP_MAX_MESSAGES=500
       - MP_DATABASE=/data/mailpit.db
@@ -39,8 +45,14 @@ services:
     container_name: medpark-n8n
     restart: unless-stopped
     ports:
-      - "5678:5678"
+      # Loopback only: the editor can create arbitrary workflows, so it is never published
+      # on every interface.
+      - "127.0.0.1:5678:5678"
     environment:
+      # The password is supplied by the operator (deploy/.env), never baked into the repository
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER:-medpark}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:?set N8N_BASIC_AUTH_PASSWORD in deploy/.env before starting the stack}
       - N8N_DIAGNOSTICS_ENABLED=false
       - N8N_VERSION_NOTIFICATIONS_ENABLED=false
       - N8N_HIRING_BANNER_ENABLED=false

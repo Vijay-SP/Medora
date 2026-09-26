@@ -79,3 +79,22 @@ def download_delivery_pdf(delivery_id: str):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Historical PDF attachment missing on disk")
 
     return FileResponse(path=path, media_type="application/pdf", filename=path.name)
+
+
+@router.get("/deliveries/{delivery_id}/attachment/docx")
+def download_delivery_docx(delivery_id: str):
+    """Downloads the exact historical DOCX revision dispatched with this delivery."""
+    deliveries = repository.list_deliveries()
+    record = next((d for d in deliveries if d.id == delivery_id), None)
+    if not record or not record.docx_attachment_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery record or attachment not found")
+
+    path = Path(record.docx_attachment_path)
+    if not path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Historical DOCX attachment missing on disk")
+
+    return FileResponse(
+        path=path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=path.name
+    )

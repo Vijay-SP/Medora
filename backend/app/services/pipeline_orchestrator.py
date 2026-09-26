@@ -3,12 +3,14 @@ Medpark Meeting Intelligence System - Pipeline Orchestrator
 Coordinates end-to-end execution across audio normalization, ASR, diarization, extraction, and delivery.
 """
 
+import asyncio
 import time
 from pathlib import Path
 from app.core.config import settings
+from app.core.exceptions import DeliveryError, DiarizationError, LLMUnavailable
 from app.core.logging import logger
 from app.models.meeting import Meeting, ProcessingStatus, ReviewStatus, WorkflowMode
-from app.models.transcript import Transcript
+from app.models.transcript import Transcript, TranscriptSegment
 from app.models.extraction import MinutesOfMeeting
 from app.models.delivery import DeliveryStatus
 from app.storage.repository import repository
@@ -20,10 +22,61 @@ from app.services.extraction.llm_engine import extraction_engine
 from app.services.documents.generator import document_generator
 from app.services.delivery.smtp_service import smtp_service
 from app.services.delivery.n8n_service import n8n_service
+from app.services.delivery.router import delivery_router
+
+# Statuses that mean a run is still in flight. Derived from the terminal states instead of being
+# enumerated, so a newly added processing stage is guarded automatically by every caller.
+TERMINAL_PROCESSING_STATUSES = frozenset({
+    ProcessingStatus.IDLE,
+    ProcessingStatus.COMPLETED,
+    ProcessingStatus.FAILED
+})
+ACTIVE_PROCESSING_STATUSES = frozenset(
+    stage for stage in ProcessingStatus if stage not in TERMINAL_PROCESSING_STATUSES
+)
+
+# Whisper (~1.8 GB) and the local LLM (~2.7 GB, resident from the first map call until the
+# extraction engine's final unload) cannot share the 4 GB VRAM, and each engine is a process-wide
+# singleton. Since the blocking stages run in worker threads, two pipelines for two different
+# meetings could otherwise load Whisper while the other run's LLM is resident, load two Whisper
+# models, release a model the other run is using, or evict the LLM in the middle of the other
+# run's map sequence. Only one run at a time may hold the GPU stages (ASR through extraction).
+_GPU_STAGE_LOCK = asyncio.Semaphore(1)
+
+# Attribution states that carry a person's name onto a segment. Only a human reviewer may put a
+# segment into one of them (POST /speakers/{cluster}/confirm); the diarizer stops at "suggested".
+HUMAN_CONFIRMED_ATTRIBUTION_STATES = frozenset({"confirmed", "corrected"})
+
+
+def find_human_attributed_segments(segments: list[TranscriptSegment]) -> list[TranscriptSegment]:
+    """
+    Returns the segments that claim a human-confirmed speaker identity.
+    A segment counts when its attribution state is confirmed/corrected OR when it carries a confirmed
+    person id / display name / printable flag: any one of them alone would already put a name on the
+    document. The fields are read with their contract defaults so a transcript model without the
+    attribution fields (legacy rows) is treated as fully anonymous rather than crashing the check.
+    """
+    return [
+        seg for seg in segments
+        if getattr(seg, "attribution_state", "anonymous") in HUMAN_CONFIRMED_ATTRIBUTION_STATES
+        or getattr(seg, "speaker_id", None) is not None
+        or getattr(seg, "confirmed_display_name", None) is not None
+        or getattr(seg, "printable_name", False)
+    ]
 
 
 class PipelineOrchestrator:
     """Manages sequential execution of speech-to-email processing stages."""
+
+    def _next_revision(self, meeting: Meeting) -> int:
+        """
+        Returns the revision this run must write.
+        A re-run never reuses the revision of an already exported document, keeping the
+        immutable revision history and meeting.current_revision consistent.
+        """
+        if repository.get_minutes(meeting.id):
+            meeting.current_revision += 1
+        return meeting.current_revision
 
     async def run_pipeline(self, meeting_id: str) -> Meeting:
         meeting = repository.get_meeting(meeting_id)
@@ -37,6 +90,18 @@ class PipelineOrchestrator:
         logger.info(f"=== Starting Pipeline for Meeting: '{meeting.title}' (Mode: {meeting.workflow_mode.value.upper()}) ===")
 
         try:
+            # Stage 0: Extraction preflight. The local LLM is required for Stage 4; asking the server
+            # for its version and model list takes seconds, whereas discovering the outage after ASR
+            # would waste minutes of GPU time. LLMUnavailable propagates to the except below.
+            meeting.processing_status = ProcessingStatus.PREPROCESSING
+            meeting.processing_progress = 5
+            meeting.current_stage_detail = "Verificare disponibilitate LLM local..."
+            meeting.error_message = None  # A fresh run must not display the previous run's failure
+            repository.save_meeting(meeting)
+
+            provenance = await extraction_engine.preflight()
+            logger.info(f"Extraction preflight passed: {provenance}")
+
             # Stage 1: Audio Normalization
             meeting.processing_status = ProcessingStatus.PREPROCESSING
             meeting.processing_progress = 10
@@ -45,8 +110,9 @@ class PipelineOrchestrator:
 
             original_path = Path(meeting.original_audio_path)
             normalized_path = file_manager.get_normalized_audio_path(meeting.id)
-            _, duration = audio_preprocessor.normalize(original_path, normalized_path)
-            
+            # Blocking inference and media work runs off the event loop so the API stays responsive
+            _, duration = await asyncio.to_thread(audio_preprocessor.normalize, original_path, normalized_path)
+
             meeting.normalized_audio_path = str(normalized_path)
             meeting.audio_duration_seconds = duration
             repository.save_meeting(meeting)
@@ -57,64 +123,101 @@ class PipelineOrchestrator:
             meeting.current_stage_detail = "Transkripție multilingvă (Română / Русский / English)..."
             repository.save_meeting(meeting)
 
-            segments = whisper_engine.transcribe(normalized_path)
-            whisper_engine.release_model()
+            # Serialized across concurrent runs from ASR through extraction: Whisper load, inference and
+            # VRAM release, then the LLM's residency until extract_minutes() unloads it in its finally,
+            # must never interleave with another meeting's GPU work. The no-speech return below leaves
+            # the block early, releasing the lock.
+            async with _GPU_STAGE_LOCK:
+                segments = await asyncio.to_thread(whisper_engine.transcribe, normalized_path)
+                await asyncio.to_thread(whisper_engine.release_model)
 
-            # Handle No-Speech audio accurately without fabricating data
-            if not segments:
-                logger.warning(f"No intelligible speech detected in meeting {meeting_id}.")
-                transcript = Transcript(meeting_id=meeting.id, segments=[])
+                # Recorded after the run so a CPU fallback taken inside the engine is visible in the audit
+                meeting.asr_device_used = whisper_engine.device
+                repository.save_meeting(meeting)
+
+                # Handle No-Speech audio accurately without fabricating data
+                if not segments:
+                    logger.warning(f"No intelligible speech detected in meeting {meeting_id}.")
+                    transcript = Transcript(meeting_id=meeting.id, segments=[])
+                    transcript.compute_stats()
+                    repository.save_transcript(transcript)
+
+                    minutes = MinutesOfMeeting(
+                        meeting_id=meeting.id,
+                        title=meeting.title,
+                        meeting_type=meeting.meeting_type.value,
+                        summary_ro="Nu a fost detectată nicio intervenție vocală inteligibilă în înregistrarea audio procesată.",
+                        summary_en="No intelligible vocal speech was detected in the processed audio recording.",
+                        agenda_topics=[meeting.agenda] if meeting.agenda else [],
+                        decisions=[],
+                        action_items=[],
+                        risks_and_questions=[],
+                        revision=self._next_revision(meeting),
+                        model_version="no-speech-detected"
+                    )
+                    repository.save_minutes(minutes)
+
+                    pdf_path, docx_path = file_manager.get_export_paths(meeting.id, revision=minutes.revision)
+                    await asyncio.to_thread(document_generator.generate_all, meeting, minutes, pdf_path, docx_path)
+                    minutes.pdf_path = str(pdf_path)
+                    minutes.docx_path = str(docx_path)
+                    repository.save_minutes(minutes)
+
+                    elapsed = time.time() - start_time
+                    meeting.processing_status = ProcessingStatus.COMPLETED
+                    meeting.processing_progress = 100
+                    meeting.processing_time_seconds = round(elapsed, 2)
+                    meeting.review_status = ReviewStatus.PENDING_REVIEW
+                    meeting.current_stage_detail = "Procesare finalizată: Nicio replică vocală detectată în înregistrare."
+                    repository.save_meeting(meeting)
+                    return meeting
+
+                # Stage 3: Speaker Diarization
+                meeting.processing_status = ProcessingStatus.DIARIZING
+                meeting.processing_progress = 55
+                meeting.current_stage_detail = "Clustere acustice și identificare replici vorbitori..."
+                repository.save_meeting(meeting)
+
+                # Enrolled people are only offered for suggestions while the feature is switched on; with
+                # VOICE_ID_ENABLED off the diarizer runs purely anonymous and no voiceprint is compared.
+                people = repository.list_people() if settings.VOICE_ID_ENABLED else []
+                diarized_segments = await asyncio.to_thread(
+                    diarization_engine.assign_speakers,
+                    normalized_path,
+                    segments,
+                    meeting.attendees,
+                    meeting_id=meeting.id,
+                    people=people
+                )
+
+                # Auto-Pilot has no human in the loop, so no segment may leave diarization with a confirmed
+                # identity: a name on an unreviewed document would be the machine attributing a doctor's
+                # words on its own authority. Checked before extraction and document generation so the
+                # violation never reaches the LLM prompt or a PDF.
+                if meeting.workflow_mode == WorkflowMode.AUTO_PILOT:
+                    attributed = find_human_attributed_segments(diarized_segments)
+                    if attributed:
+                        raise DiarizationError(
+                            f"Pipeline Auto-Pilot oprit: {len(attributed)} segmente au primit o identitate de vorbitor "
+                            "confirmată fără revizor uman. Identificarea vocală poate fi confirmată doar de o persoană, "
+                            "în modul supervizat.",
+                            details={"segment_ids": [seg.id for seg in attributed]}
+                        )
+
+                transcript = Transcript(meeting_id=meeting.id, segments=diarized_segments)
                 transcript.compute_stats()
                 repository.save_transcript(transcript)
 
-                minutes = MinutesOfMeeting(
-                    meeting_id=meeting.id,
-                    title=meeting.title,
-                    meeting_type=meeting.meeting_type.value,
-                    summary_ro="Nu a fost detectată nicio intervenție vocală inteligibilă în înregistrarea audio procesată.",
-                    summary_en="No intelligible vocal speech was detected in the processed audio recording.",
-                    agenda_topics=[meeting.agenda] if meeting.agenda else [],
-                    decisions=[],
-                    action_items=[],
-                    risks_and_questions=[],
-                    model_version="no-speech-detected"
-                )
-                repository.save_minutes(minutes)
-
-                pdf_path, docx_path = file_manager.get_export_paths(meeting.id, revision=minutes.revision)
-                document_generator.generate_all(meeting, minutes, pdf_path, docx_path)
-                minutes.pdf_path = str(pdf_path)
-                minutes.docx_path = str(docx_path)
-                repository.save_minutes(minutes)
-
-                elapsed = time.time() - start_time
-                meeting.processing_status = ProcessingStatus.COMPLETED
-                meeting.processing_progress = 100
-                meeting.processing_time_seconds = round(elapsed, 2)
-                meeting.review_status = ReviewStatus.PENDING_REVIEW
-                meeting.current_stage_detail = "Procesare finalizată: Nicio replică vocală detectată în înregistrare."
+                # Stage 4: Evidence-Linked Information Extraction (the engine unloads the LLM when done,
+                # so the VRAM is free for the next meeting's ASR)
+                meeting.processing_status = ProcessingStatus.EXTRACTING
+                meeting.processing_progress = 75
+                meeting.current_stage_detail = "Extragere decizii, acțiuni și verificare dovezi audio..."
                 repository.save_meeting(meeting)
-                return meeting
 
-            # Stage 3: Speaker Diarization
-            meeting.processing_status = ProcessingStatus.DIARIZING
-            meeting.processing_progress = 55
-            meeting.current_stage_detail = "Clustere acustice și identificare replici vorbitori..."
-            repository.save_meeting(meeting)
+                minutes = await extraction_engine.extract_minutes(meeting, transcript)
 
-            diarized_segments = diarization_engine.assign_speakers(normalized_path, segments, meeting.attendees)
-            
-            transcript = Transcript(meeting_id=meeting.id, segments=diarized_segments)
-            transcript.compute_stats()
-            repository.save_transcript(transcript)
-
-            # Stage 4: Evidence-Linked Information Extraction
-            meeting.processing_status = ProcessingStatus.EXTRACTING
-            meeting.processing_progress = 75
-            meeting.current_stage_detail = "Extragere decizii, acțiuni și verificare dovezi audio..."
-            repository.save_meeting(meeting)
-
-            minutes = await extraction_engine.extract_minutes(meeting, transcript)
+            minutes.revision = self._next_revision(meeting)
             repository.save_minutes(minutes)
 
             # Stage 5: Document Generation (PDF & DOCX)
@@ -124,7 +227,7 @@ class PipelineOrchestrator:
             repository.save_meeting(meeting)
 
             pdf_path, docx_path = file_manager.get_export_paths(meeting.id, revision=minutes.revision)
-            document_generator.generate_all(meeting, minutes, pdf_path, docx_path)
+            await asyncio.to_thread(document_generator.generate_all, meeting, minutes, pdf_path, docx_path)
 
             minutes.pdf_path = str(pdf_path)
             minutes.docx_path = str(docx_path)
@@ -133,18 +236,30 @@ class PipelineOrchestrator:
             # Stage 6: Delivery Routing Evaluation
             if meeting.workflow_mode == WorkflowMode.AUTO_PILOT:
                 logger.info("Auto-Pilot Mode active: Proceeding to automatic approval & email dispatch...")
-                meeting.review_status = ReviewStatus.APPROVED
-                meeting.approved_by = "Auto-Pilot Pipeline"
-                meeting.current_stage_detail = "Trimitere email către lista de distribuție..."
-
-                # Exclusive delivery routing: n8n or direct SMTP
-                if settings.DELIVERY_CHANNEL == "n8n" and settings.N8N_ENABLED:
-                    logger.info("Routing via n8n automation engine...")
-                    delivery_record = await n8n_service.trigger_workflow(meeting, minutes, meeting.distribution_list)
+                # A degraded draft is never auto-approved: the documents exist, so the run completes,
+                # but the meeting is held for a human exactly like a supervised run.
+                try:
+                    delivery_router.assert_dispatchable(minutes)
+                except DeliveryError as guard:
+                    meeting.review_status = ReviewStatus.PENDING_REVIEW
+                    meeting.error_message = guard.message
+                    meeting.current_stage_detail = "Document DRAFT degradat reținut pentru revizuire umană. Expedierea automată a fost blocată."
+                    logger.warning(f"Auto-Pilot dispatch blocked for meeting {meeting_id}: {guard.message}")
                 else:
-                    delivery_record = await smtp_service.deliver(meeting, minutes, pdf_path, docx_path)
+                    meeting.review_status = ReviewStatus.APPROVED
+                    meeting.approved_by = "Auto-Pilot Pipeline"
+                    meeting.current_stage_detail = "Trimitere email către lista de distribuție..."
 
-                if delivery_record:
+                    # Single authorized recipient resolution shared by both delivery channels
+                    recipients = delivery_router.resolve_recipients(meeting)
+
+                    # Exclusive delivery routing: n8n or direct SMTP
+                    if settings.DELIVERY_CHANNEL == "n8n" and settings.N8N_ENABLED:
+                        logger.info("Routing via n8n automation engine...")
+                        delivery_record = await n8n_service.trigger_workflow(meeting, minutes, recipients)
+                    else:
+                        delivery_record = await smtp_service.deliver(meeting, minutes, pdf_path, docx_path, recipients)
+
                     repository.save_delivery(delivery_record)
                     if delivery_record.status == DeliveryStatus.DISPATCHED:
                         meeting.review_status = ReviewStatus.DELIVERED
@@ -169,7 +284,11 @@ class PipelineOrchestrator:
             return meeting
 
         except Exception as e:
-            logger.error(f"Pipeline error for meeting {meeting_id}: {e}", exc_info=True)
+            if isinstance(e, LLMUnavailable):
+                # Expected operational outage, caught at preflight before any GPU work: no traceback needed
+                logger.error(f"Pipeline aborted for meeting {meeting_id}: {e}")
+            else:
+                logger.error(f"Pipeline error for meeting {meeting_id}: {e}", exc_info=True)
             meeting.processing_status = ProcessingStatus.FAILED
             meeting.error_message = str(e)
             meeting.current_stage_detail = f"Eroare: {e}"

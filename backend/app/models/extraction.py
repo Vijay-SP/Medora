@@ -15,7 +15,9 @@ class EvidenceQuote(BaseModel):
     start: float = Field(..., description="Start timestamp in seconds")
     end: float = Field(..., description="End timestamp in seconds")
     quote: str = Field(..., description="Exact spoken sentence supporting this item")
-    speaker: Optional[str] = Field(None, description="Spoken by whom")
+    speaker: Optional[str] = Field(None, description="Spoken by whom: the anonymous label, or a name only once confirmed and printable")
+    speaker_person_id: Optional[str] = Field(None, description="Confirmed Person.id of the cited segment's speaker")
+    speaker_is_confirmed: bool = Field(default=False, description="True only after a reviewer confirmed the cited segment's speaker")
 
 
 class DecisionItem(BaseModel):
@@ -39,6 +41,10 @@ class ActionItem(BaseModel):
     status: Literal["open", "in_progress", "completed", "cancelled"] = "open"
     evidence: list[EvidenceQuote] = Field(default_factory=list, description="Grounding audio evidence")
     is_reviewed: bool = Field(default=False, description="Whether confirmed by human reviewer")
+    owner_source: Literal["roster", "mention", "speaker", "confirmed_speaker", "unassigned"] = Field(
+        default="unassigned",
+        description="How the owner was resolved: attendee roster, verbatim mention, anonymous speaker label, reviewer-confirmed speaker, or none"
+    )
 
 
 class RiskOrQuestionItem(BaseModel):
@@ -65,7 +71,16 @@ class MinutesOfMeeting(BaseModel):
     generated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     model_version: str = Field(default="medpark-qwen-local")
     revision: int = 1
-    
+
+    # Extraction provenance and audit flags (all defaulted so persisted JSON keeps loading)
+    is_degraded: bool = Field(default=False, description="Heuristic fallback produced this document; not dispatchable")
+    needs_name_review: bool = Field(default=False, description="A non-roster owner or a suspect proper noun exists")
+    failed_chunks: list[int] = Field(default_factory=list, description="Transcript chunk ordinals that failed extraction twice")
+    extraction_stats: dict[str, Any] = Field(
+        default_factory=dict,
+        description="engine, model, chunks, calls, prompt_tokens, completion_tokens, seconds, json_first_pass_rate"
+    )
+
     # Document artifact references
     pdf_path: Optional[str] = None
     docx_path: Optional[str] = None

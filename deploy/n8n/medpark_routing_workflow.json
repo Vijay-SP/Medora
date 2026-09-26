@@ -41,8 +41,8 @@
       "parameters": {
         "fromEmail": "minutes@medpark.md",
         "toEmail": "={{ $json.recipients.join(', ') }}",
-        "subject": "=[MEDPARK MEDICAL] {{ $json.title }}",
-        "text": "Stimați Colegi,\n\nVă transmitem procesul-verbal oficial al Consiliului Medical Medpark.\n\nRezumat: {{ $json.summary_ro }}\nDecizii: {{ $json.decisions_count }}\nSarcini: {{ $json.actions_count }}\n\nDocumente atașate oficial."
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body_text }}"
       },
       "id": "smtp-medical",
       "name": "SMTP Medical Board",
@@ -54,8 +54,8 @@
       "parameters": {
         "fromEmail": "minutes@medpark.md",
         "toEmail": "={{ $json.recipients.join(', ') }}",
-        "subject": "=[MEDPARK EXECUTIVE] {{ $json.title }}",
-        "text": "Stimați Membri ai Comitetului Director,\n\nProcesul-verbal al ședinței executive a fost aprobat.\n\nRezumat: {{ $json.summary_ro }}"
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body_text }}"
       },
       "id": "smtp-executive",
       "name": "SMTP Executive Committee",
@@ -67,8 +67,8 @@
       "parameters": {
         "fromEmail": "minutes@medpark.md",
         "toEmail": "={{ $json.recipients.join(', ') }}",
-        "subject": "=[MEDPARK ADMIN] {{ $json.title }}",
-        "text": "Către departamentele operaționale,\n\nPlanul de acțiuni și decizii administrative Medpark a fost validat."
+        "subject": "={{ $json.subject }}",
+        "text": "={{ $json.body_text }}"
       },
       "id": "smtp-admin",
       "name": "SMTP Administrative",

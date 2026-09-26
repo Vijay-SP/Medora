@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 from pydantic import BaseModel, Field, field_validator
+import os
 import uuid
+
+from app.core.config import settings
 
 
 class DeliveryChannel(str, Enum):
@@ -88,3 +91,18 @@ DEFAULT_ROUTING_POLICIES: dict[str, RoutingPolicy] = {
         subject_prefix="[MEDPARK ADMIN]"
     )
 }
+
+_TRUTHY_FLAGS = {"1", "true", "yes", "on"}
+
+
+def default_routing_policies_enabled() -> bool:
+    """
+    The hardcoded hospital lists above are opt-in: an install that was never configured for a
+    real department must not mail those addresses just because a meeting carries no custom
+    distribution list. Honours the Settings field when core config exposes one, otherwise the
+    raw environment (ENABLE_DEFAULT_ROUTING_POLICIES, default False).
+    """
+    flag = getattr(settings, "ENABLE_DEFAULT_ROUTING_POLICIES", None)
+    if flag is None:
+        flag = os.environ.get("ENABLE_DEFAULT_ROUTING_POLICIES", "false")
+    return str(flag).strip().lower() in _TRUTHY_FLAGS

@@ -5,8 +5,13 @@ Ensures high-observability logging without leaking patient records or sensitive 
 
 import io
 import logging
+import re
 import sys
 from typing import Any
+
+
+# Matches only the credential that follows a bearer scheme, so the rest of the log line survives
+BEARER_TOKEN_PATTERN = re.compile(r"(Bearer\s+)[A-Za-z0-9\-._~+/]+=*")
 
 
 class PrivacyFilter(logging.Filter):
@@ -15,8 +20,8 @@ class PrivacyFilter(logging.Filter):
     """
     def filter(self, record: logging.LogRecord) -> bool:
         if hasattr(record, "msg") and isinstance(record.msg, str):
-            if "Bearer " in record.msg:
-                record.msg = record.msg.split("Bearer ")[0] + "Bearer [REDACTED]"
+            # Replace the token in place; truncating at the match would destroy the diagnostic context
+            record.msg = BEARER_TOKEN_PATTERN.sub(r"\1[REDACTED]", record.msg)
         return True
 
 

@@ -43,8 +43,33 @@ def test_audio_normalization_and_vad(tmp_path: Path):
     assert segments[0].duration_sec > 0.5
 
 
+def test_vad_bounds_uninterrupted_speech(tmp_path: Path):
+    """A speech run without any qualifying pause must still be split into bounded chunks."""
+    sr = 16000
+    duration = 40.0  # Well above max_chunk_duration, with no silence at all
+    t = np.linspace(0, duration, int(sr * duration), endpoint=False)
+    continuous_signal = 0.5 * np.sin(2 * np.pi * 300 * t)
+
+    audio_path = tmp_path / "continuous_speech.wav"
+    sf.write(str(audio_path), continuous_signal, sr)
+
+    segments = vad_detector.detect_segments(audio_path)
+    max_chunk = vad_detector.max_chunk_duration
+
+    assert len(segments) > 1
+    # No chunk may exceed the configured budget (float tolerance only)
+    assert all(seg.duration_sec <= max_chunk + 1e-6 for seg in segments)
+    assert all(seg.duration_sec > 0.0 for seg in segments)
+    # The split must tile the original run contiguously, without dropping or overlapping audio
+    for previous, following in zip(segments, segments[1:]):
+        assert abs(following.start_sec - previous.end_sec) < 1e-6
+    assert (segments[-1].end_sec - segments[0].start_sec) > duration - 1.0
+
+
 if __name__ == "__main__":
     import tempfile
     with tempfile.TemporaryDirectory() as td:
         test_audio_normalization_and_vad(Path(td))
+    with tempfile.TemporaryDirectory() as td:
+        test_vad_bounds_uninterrupted_speech(Path(td))
     print("Audio processing and VAD tests passed successfully!")

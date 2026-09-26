@@ -98,7 +98,8 @@ class Meeting(MeetingBase):
     original_audio_path: Optional[str] = None
     normalized_audio_path: Optional[str] = None
     audio_duration_seconds: float = 0.0
-    
+    asr_device_used: Optional[str] = None  # "cuda" / "cpu" actually used by the ASR stage of the last run
+
     # State tracking
     processing_status: ProcessingStatus = ProcessingStatus.IDLE
     processing_progress: int = 0  # 0 to 100 percentage

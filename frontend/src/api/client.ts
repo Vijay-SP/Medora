@@ -7,6 +7,14 @@ import {
   Transcript,
   MinutesOfMeeting,
   DeliveryRecord,
+  ReadinessResponse,
+  VoiceProfile,
+  VoiceProfileCreate,
+  SampleQuality,
+  VoiceStatus,
+  SpeakersResponse,
+  SpeakerCluster,
+  SpeakerConfirmRequest,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -14,6 +22,8 @@ const API_BASE = '/api/v1';
 // A stalled backend must not freeze the UI: every JSON call is bounded by an AbortController.
 const REQUEST_TIMEOUT_MS = 15000;
 const UPLOAD_TIMEOUT_MS = 180000;
+// /ready probes the LLM server (3 s budget) and the SMTP port (1 s) before answering.
+const READINESS_TIMEOUT_MS = 8000;
 
 async function fetchWithTimeout(
   url: string,
@@ -35,6 +45,13 @@ async function fetchWithTimeout(
 }
 
 export const apiClient = {
+  // System readiness: root-level route, reports the local LLM/ASR/SMTP state truthfully.
+  async getReadiness(): Promise<ReadinessResponse> {
+    const res = await fetchWithTimeout('/ready', {}, READINESS_TIMEOUT_MS);
+    if (!res.ok) throw new Error('Readiness probe failed');
+    return res.json();
+  },
+
   // Meetings
   async listMeetings(): Promise<Meeting[]> {
     const res = await fetchWithTimeout(`${API_BASE}/meetings/`);
@@ -207,4 +224,123 @@ export const apiClient = {
   getDeliveryDocxUrl(deliveryId: string): string {
     return `${API_BASE}/deliveries/${deliveryId}/attachment/docx`;
   },
+
+  // Voice profiles (people + enrollment). No call here ever returns an embedding vector, and
+  // there is deliberately no way to enroll a person from meeting audio.
+  // The collection routes are declared as "/" under the prefix, and the SPA static mount at "/"
+  // swallows the slash-less path before Starlette can redirect it: keep the trailing slash
+  // (same reason as /meetings/).
+  async listVoiceProfiles(): Promise<VoiceProfile[]> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/`);
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch voice profiles'));
+    return res.json();
+  },
+
+  async createVoiceProfile(payload: VoiceProfileCreate): Promise<VoiceProfile> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create voice profile'));
+    return res.json();
+  },
+
+  async getVoiceProfile(id: string): Promise<VoiceProfile> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/${id}`);
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch voice profile'));
+    return res.json();
+  },
+
+  async deleteVoiceProfile(id: string): Promise<void> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete voice profile'));
+  },
+
+  // granted=false withdraws consent: the backend deletes every voiceprint and sample.
+  async setVoiceConsent(id: string, granted: boolean): Promise<VoiceProfile> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/${id}/consent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ granted }),
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update consent'));
+    return res.json();
+  },
+
+  // Uploads one enrollment sample; a "reject" verdict stores nothing on the server.
+  async uploadVoiceSample(id: string, file: File): Promise<SampleQuality> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetchWithTimeout(
+      `${API_BASE}/voice-profiles/${id}/samples`,
+      { method: 'POST', body: formData },
+      UPLOAD_TIMEOUT_MS
+    );
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to upload voice sample'));
+    return res.json();
+  },
+
+  async wipeVoiceSamples(id: string): Promise<void> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/${id}/samples`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to remove voice samples'));
+  },
+
+  async getVoiceStatus(): Promise<VoiceStatus> {
+    const res = await fetchWithTimeout(`${API_BASE}/voice-profiles/status`);
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch voice status'));
+    return res.json();
+  },
+
+  // Per-meeting speaker clusters and the human confirmation write path.
+  async getSpeakers(meetingId: string): Promise<SpeakersResponse> {
+    const res = await fetchWithTimeout(`${API_BASE}/meetings/${meetingId}/speakers`);
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Speaker clusters not available'));
+    return res.json();
+  },
+
+  // Re-scores the cached segment embeddings after new enrollments; no audio is re-run.
+  async rematchSpeakers(meetingId: string): Promise<SpeakersResponse> {
+    const res = await fetchWithTimeout(`${API_BASE}/meetings/${meetingId}/speakers/rematch`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to re-match speakers'));
+    return res.json();
+  },
+
+  // 409 = stale revision, blocking reasons, or an implicit many-to-one; the detail explains which.
+  async confirmSpeaker(
+    meetingId: string,
+    clusterId: string,
+    body: SpeakerConfirmRequest
+  ): Promise<SpeakerCluster> {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/meetings/${meetingId}/speakers/${clusterId}/confirm`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Speaker decision was not recorded'));
+    return res.json();
+  },
 };
+
+// FastAPI reports failures as {detail: string | [{msg}]}; surface the text, never "[object Object]".
+async function readErrorDetail(res: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await res.json();
+    const detail = payload?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+      const msgs = detail.map((d: any) => d?.msg).filter((m: any) => typeof m === 'string');
+      if (msgs.length > 0) return msgs.join('; ');
+    }
+  } catch {
+    // Non-JSON body: fall through to the status-based message.
+  }
+  return `${fallback} (HTTP ${res.status})`;
+}

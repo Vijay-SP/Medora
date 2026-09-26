@@ -30,13 +30,15 @@ async def benchmark_audio(audio_path: Path):
     print("==================================================================")
 
     # 1. Create Benchmark Meeting Record
+    # SUPERVISED, with attendees on the unroutable .invalid domain: the benchmark measures
+    # processing latency only and must never dispatch mail to real hospital recipients.
     meeting = Meeting(
         title=f"Benchmark Test - {audio_path.stem}",
         meeting_type=MeetingType.MEDICAL,
-        workflow_mode=WorkflowMode.AUTO_PILOT,
+        workflow_mode=WorkflowMode.SUPERVISED,
         attendees=[
-            Attendee(name="Dr. Elena Ceban", role="Chirurg Șef", email="elena.ceban@medpark.md"),
-            Attendee(name="Dr. Mihail Popov", role="Șef ATI", email="mihail.popov@medpark.md")
+            Attendee(name="Benchmark Participant 1", role="Chirurg Șef", email="participant1@benchmark.invalid"),
+            Attendee(name="Benchmark Participant 2", role="Șef ATI", email="participant2@benchmark.invalid")
         ]
     )
     meeting.original_audio_path = str(audio_path)

@@ -24,14 +24,20 @@ def test_meeting_creation():
 
 
 def test_transcript_formatting():
+    # A free-text speaker name is a legacy (unverified) label: the before-validator moves it to
+    # legacy_speaker_label and the segment keeps the anonymous "Speaker N" label, so a name that was
+    # never confirmed can never reach the LLM prompt or a stored consumer via to_full_text().
     seg1 = TranscriptSegment(start=0.0, end=4.5, speaker="Dr. Ceban", raw_text="Bună ziua, începem ședința.")
-    seg2 = TranscriptSegment(start=5.0, end=10.0, speaker="Dr. Rusu", raw_text="Да, по протоколу всё готово.")
+    seg2 = TranscriptSegment(start=5.0, end=10.0, speaker="Speaker 2", raw_text="Да, по протоколу всё готово.")
     transcript = Transcript(meeting_id="test-123", segments=[seg1, seg2])
     transcript.compute_stats()
 
     assert transcript.total_words == 9
-    assert "Dr. Ceban" in transcript.to_full_text()
-    assert "по протоколу" in transcript.to_full_text()
+    assert seg1.speaker == "Speaker 1" and seg1.legacy_speaker_label == "Dr. Ceban"
+    assert seg1.attribution_state == "anonymous" and seg1.display_speaker == "Speaker 1"
+    assert "Dr. Ceban" not in transcript.to_full_text()
+    assert "Dr. Ceban" not in transcript.to_full_text(use_display_names=True)
+    assert "Speaker 2: Да, по протоколу" in transcript.to_full_text()
 
 
 def test_evidence_grounding_quote():

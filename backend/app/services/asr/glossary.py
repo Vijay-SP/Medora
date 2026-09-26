@@ -6,8 +6,9 @@ Provides vocabulary injection and decoder prompt conditioning for Romanian/Russi
 from typing import Optional
 
 
-# High-frequency medical terms across Romanian, Russian, and English in Moldovan hospital meetings
-MEDPARK_MEDICAL_VOCABULARY = [
+# High-frequency medical terms across Romanian, Russian, and English in Moldovan hospital meetings.
+# Kept as three named blocks so a prompt section can never slice across a language boundary.
+MEDPARK_ROMANIAN_TERMS = [
     # Romanian Clinical & Administrative Terms
     "Medpark", "Spitalul Internațional Medpark", "Consiliul Medical", "Comitetul Director",
     "terapie intensivă", "ATI", "anestezie", "bloc operator", "chirurgie laparoscopică",
@@ -16,18 +17,25 @@ MEDPARK_MEDICAL_VOCABULARY = [
     "angioplastie", "stent", "bypass coronarian", "cardiologie intervențională",
     "secția internare", "farmacie spitalicească", "antibioticoterapie", "consimțământ informat",
     "transfer interclinic", "raport de gardă", "termen limită", "responsabil", "aprobare buget",
-    
+]
+
+MEDPARK_RUSSIAN_TERMS = [
     # Russian Clinical & Conversational Terms (Moldovan dialectal code-switching)
     "пациент", "история болезни", "назначение", "реанимация", "дежурный врач",
     "заведующий отделением", "срочно", "согласовать", "дозировка", "операционный блок",
     "анализы", "выписка", "консилиум", "перевод в палату", "давление", "препарат",
     "капельница", "рентген", "кардиограмма", "по протоколу", "давай решим",
-    
+]
+
+MEDPARK_ENGLISH_TERMS = [
     # English Clinical, IT & Management Jargon
     "guidelines", "workflow", "Standard Operating Procedure", "SOP", "compliance",
     "quality assurance", "KPI", "follow-up", "triage", "emergency room", "screening",
     "discharge summary", "monitoring", "checkpoint", "feedback", "roadmap", "audit"
 ]
+
+# Flat view consumed by the ASR engine's review-flag heuristics
+MEDPARK_MEDICAL_VOCABULARY = MEDPARK_ROMANIAN_TERMS + MEDPARK_RUSSIAN_TERMS + MEDPARK_ENGLISH_TERMS
 
 
 def build_code_switch_prompt(
@@ -42,8 +50,8 @@ def build_code_switch_prompt(
     """
     prompt_parts = [
         "Ședință medicală și administrativă Medpark. Discuție trilingvă (Română, Русский, English).",
-        "Teme clinice: " + ", ".join(MEDPARK_MEDICAL_VOCABULARY[:25]) + ".",
-        "Термины: " + ", ".join(MEDPARK_MEDICAL_VOCABULARY[25:40]) + "."
+        "Teme clinice: " + ", ".join(MEDPARK_ROMANIAN_TERMS[:25]) + ".",
+        "Термины: " + ", ".join(MEDPARK_RUSSIAN_TERMS[:15]) + "."
     ]
 
     if attendee_names:

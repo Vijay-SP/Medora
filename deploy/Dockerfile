@@ -27,8 +27,15 @@ COPY --from=frontend-builder /build/dist /app/frontend/dist/
 
 ENV PYTHONPATH=/app/backend
 ENV OFFLINE_STRICT=true
+# OFFLINE_STRICT is the application's own policy flag; the model libraries need their own
+# switches or they still attempt a Hugging Face lookup on first load.
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
 ENV HOST=0.0.0.0
 ENV PORT=8000
+# run_server.py defaults to the development auto-reloader; a container must never run it
+ENV RELOAD=false
 
 EXPOSE 8000
 CMD ["python", "backend/run_server.py"]
