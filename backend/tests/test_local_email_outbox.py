@@ -316,6 +316,33 @@ class OutboxTests(unittest.TestCase):
             self.assertNotEqual(resent.json()["id"], sent.json()["id"])
             self.assertEqual(resent.json()["retry_of"], sent.json()["id"])
 
+    def test_resend_delivery_handles_starttls_unsupported_by_server(self):
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from aiosmtplib.errors import SMTPException
+        client = TestClient(app)
+        fixture = self.fixture()
+        meeting, minutes, pdf, docx = fixture
+        approval = client.post(f"/api/v1/meetings/{meeting.id}/review/approve", json={"reviewer_name": "Reviewer"}).json()
+        record = approval["delivery_record"]
+        send_url = f'/api/v1/deliveries/{record["id"]}/send'
+
+        calls = []
+        async def mock_send(*args, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise SMTPException("SMTP STARTTLS extension not supported by server.")
+            return ({}, "250 OK")
+
+        with patch("aiosmtplib.send", new=AsyncMock(side_effect=mock_send)):
+            sent = client.post(send_url, params={"force": "true"})
+            self.assertEqual(sent.status_code, 200)
+            self.assertEqual(sent.json()["status"], "dispatched")
+            self.assertEqual(len(calls), 2)
+            # The second attempt should have used start_tls=False and use_tls=False
+            self.assertFalse(calls[1]["start_tls"])
+            self.assertFalse(calls[1]["use_tls"])
+
 
 if __name__ == "__main__":
     unittest.main()

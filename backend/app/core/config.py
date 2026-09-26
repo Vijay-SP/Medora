@@ -160,8 +160,8 @@ class Settings(BaseSettings):
     
     model_config = SettingsConfigDict(
         env_file=(
-            Path(__file__).resolve().parent.parent.parent.parent / ".env",
             Path(__file__).resolve().parent.parent.parent / ".env",
+            Path(__file__).resolve().parent.parent.parent.parent / ".env",
             ".env",
         ),
         env_file_encoding="utf-8",
@@ -172,6 +172,15 @@ class Settings(BaseSettings):
     def resolve_outbox_directory(self):
         if self.OUTBOX_DIR is None:
             self.OUTBOX_DIR = self.DATA_DIR / "outbox"
+        return self
+
+    @model_validator(mode="after")
+    def resolve_smtp_tls_defaults(self):
+        if self.SMTP_USE_TLS:
+            self.SMTP_STARTTLS = False
+        elif self.SMTP_PORT == 1025 and self.SMTP_HOST in ("127.0.0.1", "localhost", "::1"):
+            if self.SMTP_STARTTLS is None:
+                self.SMTP_STARTTLS = False
         return self
 
     def ensure_directories(self) -> None:

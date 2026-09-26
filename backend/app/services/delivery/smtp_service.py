@@ -265,20 +265,51 @@ class SMTPDeliveryService:
         record.status = DeliveryStatus.PENDING
         record.retry_allowed = False
         repository.save_delivery(record)
+        use_tls = settings.SMTP_USE_TLS
+        start_tls = settings.SMTP_STARTTLS
+        if use_tls:
+            start_tls = False
+        elif start_tls is None:
+            if settings.SMTP_PORT == 587:
+                start_tls = True
+            elif settings.SMTP_PORT in (1025, 25) or settings.SMTP_HOST in ("127.0.0.1", "localhost", "::1"):
+                start_tls = False
+
         try:
-            logger.info(f"Connecting to SMTP server at {settings.SMTP_HOST}:{settings.SMTP_PORT}...")
-            refused, _ = await aiosmtplib.send(
-                raw,
-                sender=record.envelope_sender,
-                recipients=record.recipients,
-                hostname=settings.SMTP_HOST,
-                port=settings.SMTP_PORT,
-                username=settings.SMTP_USERNAME or None,
-                password=settings.SMTP_PASSWORD or None,
-                use_tls=settings.SMTP_USE_TLS,
-                start_tls=settings.SMTP_STARTTLS,
-                timeout=settings.SMTP_TIMEOUT_SECONDS
-            )
+            logger.info(f"Connecting to SMTP server at {settings.SMTP_HOST}:{settings.SMTP_PORT} (tls={use_tls}, starttls={start_tls})...")
+            try:
+                refused, _ = await aiosmtplib.send(
+                    raw,
+                    sender=record.envelope_sender,
+                    recipients=record.recipients,
+                    hostname=settings.SMTP_HOST,
+                    port=settings.SMTP_PORT,
+                    username=settings.SMTP_USERNAME or None,
+                    password=settings.SMTP_PASSWORD or None,
+                    use_tls=use_tls,
+                    start_tls=start_tls,
+                    timeout=settings.SMTP_TIMEOUT_SECONDS
+                )
+            except aiosmtplib.errors.SMTPException as smtp_exc:
+                if "STARTTLS extension not supported" in str(smtp_exc) and start_tls is not False:
+                    logger.warning(
+                        f"SMTP server at {settings.SMTP_HOST}:{settings.SMTP_PORT} does not support STARTTLS: {smtp_exc}. "
+                        "Retrying connection in plaintext without STARTTLS..."
+                    )
+                    refused, _ = await aiosmtplib.send(
+                        raw,
+                        sender=record.envelope_sender,
+                        recipients=record.recipients,
+                        hostname=settings.SMTP_HOST,
+                        port=settings.SMTP_PORT,
+                        username=settings.SMTP_USERNAME or None,
+                        password=settings.SMTP_PASSWORD or None,
+                        use_tls=False,
+                        start_tls=False,
+                        timeout=settings.SMTP_TIMEOUT_SECONDS
+                    )
+                else:
+                    raise
             if refused:
                 record.status = DeliveryStatus.FAILED
                 record.error_message = "Some recipients were refused; others may have received the email. Check the relay before any resend."
@@ -296,6 +327,7 @@ class SMTPDeliveryService:
                 or "10061" in str(e)
             )
             record.retry_allowed = connection_failed or isinstance(e, (
+                aiosmtplib.errors.SMTPException,
                 aiosmtplib.errors.SMTPAuthenticationError, aiosmtplib.errors.SMTPRecipientsRefused,
                 aiosmtplib.errors.SMTPSenderRefused,
             ))
