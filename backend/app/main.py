@@ -323,12 +323,66 @@ async def readiness_check():
     except Exception:
         smtp_connected = False
 
-    # ASR model cache check
-    asr_cached = any(settings.MODELS_DIR.glob("**/*whisper*")) or any(settings.MODELS_DIR.glob("**/*.bin"))
+    # ASR service readiness probe
+    asr_provider = settings.ASR_PROVIDER
+    asr_ready = True
+    if asr_provider == "remote":
+        asr_service = {
+            "provider": "remote",
+            "endpoint": settings.REMOTE_ASR_BASE_URL,
+            "connected": False,
+            "ready": False,
+        }
+        try:
+            headers = {"Authorization": f"Bearer {settings.REMOTE_ASR_API_KEY}"} if settings.REMOTE_ASR_API_KEY else {}
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                resp = await client.get(f"{settings.REMOTE_ASR_BASE_URL.rstrip('/')}/ready", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                asr_ready = bool(data.get("ready", False))
+                asr_service.update({
+                    "connected": True,
+                    "ready": asr_ready,
+                    "model_name": data.get("model", ""),
+                    "device": data.get("device", "remote"),
+                    "queue_depth": data.get("queue_depth", 0),
+                })
+        except Exception as exc:
+            asr_service["error"] = str(exc)
+            asr_ready = False
+    elif asr_provider == "whisper_cpp":
+        from app.services.asr.whisper_cpp_engine import WhisperCppEngine
+        cpp_engine = WhisperCppEngine(
+            binary_path=settings.WHISPER_CPP_BINARY,
+            model_path=settings.WHISPER_CPP_MODEL,
+            vad_model_path=settings.WHISPER_CPP_VAD_MODEL,
+            threads=settings.WHISPER_CPP_THREADS,
+            use_gpu=settings.WHISPER_CPP_USE_GPU,
+            timeout_s=settings.WHISPER_CPP_TIMEOUT_S,
+        )
+        h = cpp_engine.health()
+        asr_ready = bool(h.get("ready", False))
+        asr_service = {
+            "provider": "whisper_cpp",
+            "model_name": h.get("model", ""),
+            "cached_locally": asr_ready,
+            "device": h.get("device", "metal" if settings.WHISPER_CPP_USE_GPU else "cpu"),
+            "ready": asr_ready,
+        }
+    else:
+        asr_cached = any(settings.MODELS_DIR.glob("**/*whisper*")) or any(settings.MODELS_DIR.glob("**/*.bin"))
+        asr_service = {
+            "provider": "faster_whisper",
+            "model_name": settings.WHISPER_MODEL_NAME,
+            "cached_locally": asr_cached,
+            "device": settings.WHISPER_DEVICE,
+        }
 
     # If policy requires strict LLM, ready is False when LLM is down
     is_ready = storage_ok
     if settings.REQUIRE_LOCAL_LLM and not llm_connected:
+        is_ready = False
+    if asr_provider == "remote" and not asr_ready:
         is_ready = False
 
     return {
@@ -337,11 +391,7 @@ async def readiness_check():
             "ready": storage_ok,
             "data_dir": str(settings.DATA_DIR)
         },
-        "asr_service": {
-            "model_name": settings.WHISPER_MODEL_NAME,
-            "cached_locally": asr_cached,
-            "device": settings.WHISPER_DEVICE
-        },
+        "asr_service": asr_service,
         "llm_service": {
             "endpoint": settings.LLM_API_BASE_URL,
             "engine": "ollama",

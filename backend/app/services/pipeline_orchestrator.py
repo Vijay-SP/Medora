@@ -16,7 +16,7 @@ from app.models.delivery import DeliveryStatus
 from app.storage.repository import repository
 from app.storage.file_manager import file_manager
 from app.services.audio.preprocessor import audio_preprocessor
-from app.services.asr.whisper_engine import whisper_engine
+from app.services.asr import get_asr_engine
 from app.services.diarization.speaker_engine import diarization_engine
 from app.services.extraction.llm_engine import extraction_engine
 from app.services.documents.generator import document_generator
@@ -128,11 +128,12 @@ class PipelineOrchestrator:
             # must never interleave with another meeting's GPU work. The no-speech return below leaves
             # the block early, releasing the lock.
             async with _GPU_STAGE_LOCK:
-                segments = await asyncio.to_thread(whisper_engine.transcribe, normalized_path)
-                await asyncio.to_thread(whisper_engine.release_model)
+                asr_engine = get_asr_engine()
+                segments = await asyncio.to_thread(asr_engine.transcribe, normalized_path)
+                await asyncio.to_thread(asr_engine.release_model)
 
                 # Recorded after the run so a CPU fallback taken inside the engine is visible in the audit
-                meeting.asr_device_used = whisper_engine.device
+                meeting.asr_device_used = asr_engine.device
                 repository.save_meeting(meeting)
 
                 # Handle No-Speech audio accurately without fabricating data
