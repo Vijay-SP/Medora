@@ -79,7 +79,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-6">
       {/* Top Welcome & Quick Action Hero */}
       <div className="bg-gradient-to-r from-slate-900 via-medpark-900 to-slate-900 text-white p-6 sm:p-8 rounded-3xl shadow-sm relative overflow-hidden">
         <div className="relative z-10 max-w-2xl space-y-2">

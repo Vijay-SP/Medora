@@ -39,7 +39,7 @@ export const SettingsView: React.FC = () => {
   const asrLanguages = asr?.languages && asr.languages.length > 0 ? asr.languages.map((l) => l.toUpperCase()).join(' / ') : undefined;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Header */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

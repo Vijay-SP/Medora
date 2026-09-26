@@ -629,7 +629,7 @@ export const PeoplePage: React.FC<PeoplePageProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Header */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-start justify-between gap-4">
         <div className="space-y-1.5 min-w-0">
