@@ -48,14 +48,20 @@ _GPU_STAGE_LOCK = asyncio.Semaphore(1)
 HUMAN_CONFIRMED_ATTRIBUTION_STATES = frozenset({"confirmed", "corrected"})
 
 
-def collect_asr_stats() -> dict:
+def collect_asr_stats(engine: Any = None) -> dict:
     """
     Snapshot of the ASR engine's last run (strategy, window languages, rescoring, garbage flags, RTF)
-    as published by whisper_engine.last_run_stats. Read defensively: an engine build without the
+    as published by the engine's last_run_stats. Read defensively: an engine build without the
     attribute, or a stage entered before any transcription, yields {} rather than an AttributeError.
     Copied so a later run cannot mutate the dict already persisted on this meeting.
     """
-    stats = getattr(whisper_engine, "last_run_stats", None)
+    if engine is None:
+        try:
+            from app.services.asr.whisper_engine import whisper_engine
+            engine = whisper_engine
+        except Exception:
+            engine = None
+    stats = getattr(engine, "last_run_stats", None)
     return dict(stats) if isinstance(stats, dict) else {}
 
 
@@ -159,7 +165,7 @@ class PipelineOrchestrator:
                 # together with the per-window language statistics of this transcription (strategy,
                 # window_languages, rescored_windows, garbage_flagged, rtf) for the reviewer and the docs.
                 meeting.asr_device_used = asr_engine.device
-                asr_stats = collect_asr_stats()
+                asr_stats = collect_asr_stats(asr_engine)
                 record_asr_stats(meeting, asr_stats)
                 if asr_stats:
                     logger.info(

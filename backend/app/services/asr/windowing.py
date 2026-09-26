@@ -14,21 +14,23 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 import numpy as np
-from faster_whisper.vad import VadOptions, get_speech_timestamps
 
 SAMPLE_RATE = 16000
 
-# Silero VAD settings measured on the real far-field recording: 0.5/0.35 hysteresis, 400 ms silences
-# split utterances, 200 ms padding keeps word onsets, and speech regions are capped at 20 s so a single
-# monologue still packs into windows well under the 28 s hard cap.
-VAD_OPTIONS = VadOptions(
-    threshold=0.5,
-    neg_threshold=0.35,
-    min_speech_duration_ms=250,
-    max_speech_duration_s=20.0,
-    min_silence_duration_ms=400,
-    speech_pad_ms=200,
-)
+try:
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    VAD_OPTIONS = VadOptions(
+        threshold=0.5,
+        neg_threshold=0.35,
+        min_speech_duration_ms=250,
+        max_speech_duration_s=20.0,
+        min_silence_duration_ms=400,
+        speech_pad_ms=200,
+    )
+except ImportError:
+    VadOptions = None
+    get_speech_timestamps = None
+    VAD_OPTIONS = None
 
 # A silence this long between two VAD regions closes the current window even below the target length:
 # a window is decoded as one contiguous slice, so long internal silences only feed the hallucination
@@ -56,11 +58,14 @@ class DecodeWindow:
         return audio[int(round(self.start * sample_rate)): int(round(self.end * sample_rate))]
 
 
-def speech_regions(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, vad_options: VadOptions = VAD_OPTIONS) -> list[tuple[float, float]]:
+def speech_regions(audio: np.ndarray, sample_rate: int = SAMPLE_RATE, vad_options: VadOptions | None = None) -> list[tuple[float, float]]:
     """Silero VAD speech regions as (start_s, end_s), clipped to the audio length."""
     if audio.size == 0:
         return []
-    chunks = get_speech_timestamps(audio, vad_options, sampling_rate=sample_rate)
+    if get_speech_timestamps is None:
+        raise RuntimeError("faster_whisper is not installed. Use whisper_cpp or remote ASR provider.")
+    opts = vad_options or VAD_OPTIONS
+    chunks = get_speech_timestamps(audio, opts, sampling_rate=sample_rate)
     total = audio.shape[0] / sample_rate
     regions = []
     for chunk in chunks:
