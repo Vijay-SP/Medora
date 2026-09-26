@@ -33,6 +33,7 @@ import {
   ChevronDown,
   Plus,
   Globe,
+  Archive,
 } from 'lucide-react';
 
 interface SessionWorkspaceViewProps {
@@ -40,6 +41,7 @@ interface SessionWorkspaceViewProps {
   selectedMeeting: Meeting | null;
   onSelectMeeting: (id: string) => void;
   onBackToDashboard: () => void;
+  onBackToVault?: () => void;
   minutes: MinutesOfMeeting | null;
   transcript: Transcript | null;
   isProcessing: boolean;
@@ -90,6 +92,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   selectedMeeting,
   onSelectMeeting,
   onBackToDashboard,
+  onBackToVault,
   minutes,
   transcript,
   isProcessing,
@@ -161,13 +164,24 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Top Workspace Bar: Navigation & Quick Session Switcher */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2">
+          {onBackToVault && (
+            <button
+              onClick={onBackToVault}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-medpark-700 bg-medpark-50 hover:bg-medpark-100 border border-medpark-200 transition-colors shadow-xs"
+              title="Return to Meeting Intelligence Vault"
+            >
+              <Archive className="w-3.5 h-3.5 text-medpark-600" />
+              <span>Vault</span>
+            </button>
+          )}
+
           <button
             onClick={onBackToDashboard}
-            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors"
             title="Return to Dashboard view"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-3.5 h-3.5" />
             <span>Dashboard</span>
           </button>
 

@@ -203,7 +203,7 @@ export const ParticipantSelector: React.FC<ParticipantSelectorProps> = ({
             }`}
           >
             <UserPlus className="w-3.5 h-3.5 text-amber-600" />
-            <span>+ Add Guest</span>
+            <span>+ Guest</span>
           </button>
         </div>
       </div>

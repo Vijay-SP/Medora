@@ -5,6 +5,7 @@ import { useToast } from './components/Toast';
 import { Navbar } from './components/Navbar';
 import { Sidebar, AppPage } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { MeetingVaultView } from './components/MeetingVaultView';
 import { SessionWorkspaceView } from './components/SessionWorkspaceView';
 import { LiveMeetingStudio } from './components/LiveMeetingStudio';
 import { DeliveriesView } from './components/DeliveriesView';
@@ -193,7 +194,7 @@ export const App: React.FC = () => {
       }
 
       // People & Voices owns its own dialogs (consent drawer, delete confirmations) and Escape handling.
-      if (view === 'people') return;
+      if (view === 'people' || currentPage === 'people') return;
 
       const activeElement = document.activeElement as HTMLElement | null;
       const activeTag = activeElement?.tagName;
@@ -217,6 +218,9 @@ export const App: React.FC = () => {
         e.preventDefault();
         setIntakeInitialMode('upload');
         setIsIntakeOpen(true);
+      } else if (e.key === 'v' || e.key === 'V') {
+        e.preventDefault();
+        setCurrentPage('vault');
       } else if (e.key === 'o' || e.key === 'O') {
         e.preventDefault();
         setCurrentPage('deliveries');
@@ -574,14 +578,18 @@ export const App: React.FC = () => {
   ).length;
 
   const getPageTitle = (page: AppPage): string => {
-    if (view === 'people') return 'People & Voices';
+    if (view === 'people') return 'People & Voices (Speaker Enrolment & Consent)';
     switch (page) {
       case 'dashboard':
         return 'Executive Dashboard';
+      case 'vault':
+        return 'Meeting Intelligence Vault';
       case 'workspace':
         return selectedMeeting ? `Workspace: ${selectedMeeting.title}` : 'Session Workspace';
       case 'live':
         return 'Live Meeting Room (Conference Mic)';
+      case 'people':
+        return 'People & Voices (Speaker Enrolment & Consent)';
       case 'deliveries':
         return 'Email Governance & Deliveries';
       case 'settings':
@@ -601,10 +609,15 @@ export const App: React.FC = () => {
 
       {/* Persistent Left Sidebar */}
       <Sidebar
-        currentPage={currentPage}
+        currentPage={view === 'people' ? 'people' : currentPage}
         onNavigate={(page) => {
-          setView('workspace');
-          setCurrentPage(page);
+          if (page === 'people') {
+            setView('people');
+            setCurrentPage('people');
+          } else {
+            setView('workspace');
+            setCurrentPage(page);
+          }
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }}
         onStartLiveMeeting={() => {
@@ -620,6 +633,7 @@ export const App: React.FC = () => {
         pendingReviewsCount={pendingCount}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
+        voiceIdEnabled={voiceIdEnabled}
       />
 
       {/* Main Workspace Frame */}
@@ -638,8 +652,16 @@ export const App: React.FC = () => {
           onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
           currentPageTitle={getPageTitle(currentPage)}
           meetingsCount={meetings.length}
-          onOpenPeople={() => setView((v) => (v === 'people' ? 'workspace' : 'people'))}
-          isPeopleActive={view === 'people'}
+          onOpenPeople={() => {
+            if (view === 'people' || currentPage === 'people') {
+              setView('workspace');
+              setCurrentPage('dashboard');
+            } else {
+              setView('people');
+              setCurrentPage('people');
+            }
+          }}
+          isPeopleActive={view === 'people' || currentPage === 'people'}
           onReadinessChange={setReadiness}
         />
 
@@ -706,11 +728,38 @@ export const App: React.FC = () => {
         {/* Dynamic Page Views */}
         <main id="main-content" className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {/* People & Voices: full-width, in place of whichever page was open */}
-          {view === 'people' && <PeoplePage onBack={() => setView('workspace')} />}
+          {(view === 'people' || currentPage === 'people') && (
+            <PeoplePage
+              onBack={() => {
+                setView('workspace');
+                setCurrentPage('dashboard');
+              }}
+            />
+          )}
 
-          {/* Page 1: Dashboard View */}
+          {/* Page 1: Executive Dashboard View */}
           {view === 'workspace' && currentPage === 'dashboard' && (
             <DashboardView
+              meetings={meetings}
+              selectedMeetingId={selectedMeetingId}
+              onSelectMeeting={handleSelectMeeting}
+              onOpenWorkspace={(id) => {
+                handleSelectMeeting(id);
+                setCurrentPage('workspace');
+              }}
+              onOpenVault={() => setCurrentPage('vault')}
+              onStartLiveMeeting={() => setCurrentPage('live')}
+              onUploadRecording={() => {
+                setIntakeInitialMode('upload');
+                setIsIntakeOpen(true);
+              }}
+              onOpenDeliveries={() => setCurrentPage('deliveries')}
+            />
+          )}
+
+          {/* Page 2: Meeting Intelligence Vault */}
+          {view === 'workspace' && currentPage === 'vault' && (
+            <MeetingVaultView
               meetings={meetings}
               selectedMeetingId={selectedMeetingId}
               onSelectMeeting={handleSelectMeeting}
@@ -741,6 +790,7 @@ export const App: React.FC = () => {
               selectedMeeting={selectedMeeting}
               onSelectMeeting={handleSelectMeeting}
               onBackToDashboard={() => setCurrentPage('dashboard')}
+              onBackToVault={() => setCurrentPage('vault')}
               minutes={minutes}
               transcript={transcriptForDisplay}
               isProcessing={isProcessing}
