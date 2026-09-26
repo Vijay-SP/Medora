@@ -105,48 +105,71 @@ export const SettingsView: React.FC = () => {
             {asr && (
               <div className="divide-y divide-slate-100 text-xs">
                 <div className="py-2 flex justify-between items-center">
+                  <span className="text-slate-500">Provider</span>
+                  <span className="font-mono font-semibold text-slate-800">
+                    {asr.provider === 'remote' ? 'Remote (Mac mini Metal GPU)' : (asr.provider || 'faster_whisper')}
+                  </span>
+                </div>
+                {asr.endpoint && (
+                  <div className="py-2 flex justify-between items-center">
+                    <span className="text-slate-500">Endpoint</span>
+                    <span className="font-mono text-slate-700">{asr.endpoint}</span>
+                  </div>
+                )}
+                <div className="py-2 flex justify-between items-center">
                   <span className="text-slate-500">Model</span>
                   <span className="font-mono font-semibold text-slate-800">
-                    {asr.model_name}
-                    {!asr.cached_locally && <span className="ml-1 font-sans font-bold text-amber-700">(not cached)</span>}
+                    {asr.model_name || 'ggml-large-v3-turbo.bin'}
+                    {asr.cached_locally === false && <span className="ml-1 font-sans font-bold text-amber-700">(not cached)</span>}
                   </span>
                 </div>
                 <div className="py-2 flex justify-between items-center">
-                  <span className="text-slate-500">Resolved Device</span>
+                  <span className="text-slate-500">Device</span>
                   <span
                     className={`font-mono font-bold px-2 py-0.5 rounded ${
-                      asr.resolved_device === 'cuda'
+                      (asr.resolved_device || asr.device) === 'metal' || (asr.resolved_device || asr.device) === 'cuda'
                         ? 'text-emerald-700 bg-emerald-50'
-                        : asr.resolved_device
+                        : asr.resolved_device || asr.device
                         ? 'text-amber-700 bg-amber-50'
                         : 'text-slate-500 bg-slate-50'
                     }`}
                     title={`Configured: ${asr.device}`}
                   >
-                    {asrValue(asr.resolved_device)}
+                    {asrValue(asr.resolved_device || asr.device)}
                   </span>
                 </div>
-                <div className="py-2 flex justify-between items-center">
-                  <span className="text-slate-500">Strategy</span>
-                  <span className="font-mono font-semibold text-slate-800">{asrValue(asr.strategy)}</span>
-                </div>
-                <div className="py-2 flex justify-between items-center">
-                  <span className="text-slate-500">Languages (restricted LID)</span>
-                  <span className="font-mono font-semibold text-slate-800">{asrLanguages || 'not reported'}</span>
-                </div>
-                <div className="py-2 flex justify-between items-center">
-                  <span className="text-slate-500">Code-Switching</span>
-                  {asr.code_switching ? (
-                    <span className="inline-flex items-center space-x-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
-                      <span>Per-window language ID</span>
+                {asr.provider === 'remote' ? (
+                  <div className="py-2 flex justify-between items-center">
+                    <span className="text-slate-500">Queue Depth</span>
+                    <span className="font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                      {asr.queue_depth ?? 0} jobs pending
                     </span>
-                  ) : (
-                    <span className="font-semibold text-slate-500">
-                      {asr.code_switching === false ? 'Off (single-language pass)' : 'not reported'}
-                    </span>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-slate-500">Strategy</span>
+                      <span className="font-mono font-semibold text-slate-800">{asrValue(asr.strategy)}</span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-slate-500">Languages (restricted LID)</span>
+                      <span className="font-mono font-semibold text-slate-800">{asrLanguages || 'not reported'}</span>
+                    </div>
+                    <div className="py-2 flex justify-between items-center">
+                      <span className="text-slate-500">Code-Switching</span>
+                      {asr.code_switching ? (
+                        <span className="inline-flex items-center space-x-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
+                          <span>Per-window language ID</span>
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-slate-500">
+                          {asr.code_switching === false ? 'Off (single-language pass)' : 'not reported'}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

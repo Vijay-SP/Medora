@@ -294,13 +294,18 @@ export interface VoiceIdReadiness {
 // Whisper actually runs on. `code_switching` is true when per-window restricted language identification
 // is active (strategy windowed/batched). The last four keys are absent on backends built before it.
 export interface AsrServiceReadiness {
-  model_name: string;
-  cached_locally: boolean;
-  device: string;
+  model_name?: string;
+  cached_locally?: boolean;
+  device?: string;
   resolved_device?: string;
   strategy?: string;
   languages?: string[];
   code_switching?: boolean;
+  provider?: string;
+  endpoint?: string;
+  connected?: boolean;
+  ready?: boolean;
+  queue_depth?: number;
 }
 
 export interface ReadinessResponse {

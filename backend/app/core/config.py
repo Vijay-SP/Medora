@@ -145,7 +145,11 @@ class Settings(BaseSettings):
     ALLOW_AUTO_CONFIRM_SPEAKERS: bool = False
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(
+            Path(__file__).resolve().parent.parent.parent.parent / ".env",
+            Path(__file__).resolve().parent.parent.parent / ".env",
+            ".env",
+        ),
         env_file_encoding="utf-8",
         extra="ignore"
     )
