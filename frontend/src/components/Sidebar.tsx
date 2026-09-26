@@ -80,13 +80,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       aria-label="Application navigation"
-      className={`bg-white border-r border-slate-200 flex flex-col justify-between transition-all duration-300 z-30 select-none ${
+      className={`bg-white border-r border-slate-200 sticky top-0 h-screen flex-shrink-0 flex flex-col justify-between transition-all duration-300 z-30 select-none ${
         isCollapsed ? 'w-20' : 'w-64 sm:w-72'
       }`}
     >
       {/* Top Header & Branding */}
-      <div>
-        <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4">
+      <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
+        <div className="h-16 border-b border-slate-200 flex items-center justify-between px-4 flex-shrink-0">
           {!isCollapsed ? (
             <div className="flex items-center space-x-2 overflow-hidden">
               <MedoraLogo size="sm" showTagline={false} />
@@ -107,7 +107,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Primary Intake Buttons: Two Clear Options */}
-        <div className="p-3 space-y-2">
+        <div className="p-3 space-y-2 flex-shrink-0">
           {/* Option 1: Start Live Meeting */}
           <button
             onClick={onStartLiveMeeting}
@@ -182,7 +182,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Section: Active Meeting & Offline Badge */}
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-3 border-t border-slate-200 space-y-2 flex-shrink-0">
         {/* Active Session Indicator */}
         {!isCollapsed && selectedMeeting && (
           <div
