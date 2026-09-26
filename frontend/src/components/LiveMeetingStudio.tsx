@@ -63,6 +63,7 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const frameCountRef = useRef<number>(0);
 
   // Discover connected microphones (e.g. conference room omni mic vs laptop mic)
   useEffect(() => {
@@ -113,6 +114,37 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
     }
   };
 
+  // Draw resting idle state on canvas
+  const drawIdleWaveform = useCallback(() => {
+    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.clearRect(0, 0, width, height);
+
+    const barCount = 48;
+    const barWidth = (width / barCount) - 2;
+
+    for (let i = 0; i < barCount; i++) {
+      const barHeight = 4;
+      const x = i * (barWidth + 2);
+      const y = (height - barHeight) / 2;
+
+      ctx.fillStyle = '#1e293b'; // slate-800
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(x, y, barWidth, barHeight, 2) : ctx.rect(x, y, barWidth, barHeight);
+      ctx.fill();
+    }
+  }, []);
+
+  // Initial idle render on mount
+  useEffect(() => {
+    drawIdleWaveform();
+  }, [drawIdleWaveform]);
+
   // Canvas visualizer loop
   const drawWaveform = useCallback(() => {
     if (!analyserRef.current || !canvasRef.current) return;
@@ -130,7 +162,12 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
       sum += dataArray[i];
     }
     const avg = sum / bufferLength;
-    setVolumeLevel(Math.min(100, Math.round((avg / 128) * 100)));
+
+    // Throttle React state updates to avoid re-rendering entire tree at 60 FPS
+    frameCountRef.current = (frameCountRef.current || 0) + 1;
+    if (frameCountRef.current % 6 === 0) {
+      setVolumeLevel(Math.min(100, Math.round((avg / 128) * 100)));
+    }
 
     // Render bars on canvas
     const width = canvas.width;
@@ -139,7 +176,7 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
 
     const barCount = 48;
     const barWidth = (width / barCount) - 2;
-    const step = Math.floor(bufferLength / barCount);
+    const step = Math.max(1, Math.floor(bufferLength / barCount));
 
     for (let i = 0; i < barCount; i++) {
       const val = dataArray[i * step] || 0;
@@ -148,10 +185,10 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
       const x = i * (barWidth + 2);
       const y = height - barHeight;
 
-      // Gradient color: blue to teal to green
+      // Gradient color: blue to teal to emerald green
       const grad = ctx.createLinearGradient(0, height, 0, 0);
       grad.addColorStop(0, '#0284c7');
-      grad.addColorStop(0.7, '#0d9488');
+      grad.addColorStop(0.6, '#0d9488');
       grad.addColorStop(1, '#10b981');
 
       ctx.fillStyle = grad;
@@ -162,6 +199,34 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
 
     animationFrameRef.current = requestAnimationFrame(drawWaveform);
   }, []);
+
+  // Reactive visualizer controller: starts on record, pauses on pause, resets to idle on stop
+  useEffect(() => {
+    if (isRecording && !isPaused) {
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      animationFrameRef.current = requestAnimationFrame(drawWaveform);
+    } else {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      if (!isRecording) {
+        setVolumeLevel(0);
+        drawIdleWaveform();
+      }
+    }
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+    };
+  }, [isRecording, isPaused, drawWaveform, drawIdleWaveform]);
 
   const startLiveRecording = async () => {
     setErrorMessage(null);
@@ -176,15 +241,15 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
       // Set up AudioContext for real-time visualization
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       const audioCtx = new AudioCtx();
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
       audioContextRef.current = audioCtx;
       const source = audioCtx.createMediaStreamSource(stream);
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
       analyserRef.current = analyser;
-
-      // Start canvas loop
-      drawWaveform();
 
       // Configure MediaRecorder
       const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg', 'audio/mp4'];
@@ -230,6 +295,9 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
     if (mediaRecorderRef.current && isRecording && !isPaused) {
       mediaRecorderRef.current.pause();
       setIsPaused(true);
+      if (audioContextRef.current && audioContextRef.current.state === 'running') {
+        audioContextRef.current.suspend().catch(() => {});
+      }
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
         timerIntervalRef.current = null;
@@ -240,6 +308,9 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
   const resumeLiveRecording = () => {
     if (mediaRecorderRef.current && isRecording && isPaused) {
       mediaRecorderRef.current.resume();
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().catch(() => {});
+      }
       setIsPaused(false);
       timerIntervalRef.current = window.setInterval(() => {
         setElapsedSeconds((prev) => prev + 1);
@@ -427,11 +498,30 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
               </div>
 
               {/* Real-Time Waveform Canvas */}
-              <div className="h-20 w-full mt-2 bg-slate-950/80 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
-                {isRecording ? (
-                  <canvas ref={canvasRef} width={480} height={80} className="w-full h-full" />
-                ) : (
-                  <span className="text-xs text-slate-500 font-mono">Visualizer activates during live recording</span>
+              <div className="h-20 w-full mt-2 bg-slate-950/80 rounded-xl overflow-hidden border border-slate-800 relative flex items-center justify-center">
+                <canvas
+                  ref={canvasRef}
+                  width={640}
+                  height={80}
+                  className={`w-full h-full transition-opacity duration-300 ${
+                    isRecording && !isPaused ? 'opacity-100' : 'opacity-40'
+                  }`}
+                />
+                {!isRecording && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-slate-950/40">
+                    <span className="text-xs text-slate-400 font-mono tracking-wide flex items-center space-x-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                      <span>Visualizer activates during live recording</span>
+                    </span>
+                  </div>
+                )}
+                {isRecording && isPaused && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-slate-950/60">
+                    <span className="text-xs text-amber-400 font-mono font-bold tracking-wider uppercase flex items-center space-x-2">
+                      <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                      <span>Recording Paused</span>
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
