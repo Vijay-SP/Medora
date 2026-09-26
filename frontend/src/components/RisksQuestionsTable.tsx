@@ -11,21 +11,31 @@ interface RisksQuestionsTableProps {
 
 const I18N = {
   all: {
-    title: 'Clinical Risks & Open Questions / Riscuri & Întrebări / Риски и вопросы',
-    subtitle: 'Identified clinical safety risks and unresolved queries / Probleme clinice / Потенциальные риски',
-    risksCount: 'risks / riscuri / рисков',
-    questionsCount: 'questions / întrebări / вопросов',
-    copy: 'Copy / Copiază / Копировать',
-    searchPlaceholder: 'Filter risks and questions / Caută riscuri / Поиск рисков...',
+    title: 'Clinical Risks & Open Questions (Comparative View)',
+    subtitle: 'Identified clinical safety risks and unresolved queries (RO / RU / EN)',
+    risksCount: 'risks',
+    questionsCount: 'questions',
+    copy: 'Copy',
+    searchPlaceholder: 'Filter risks and questions across languages...',
     types: {
-      all: 'All / Toate / Все',
-      risk: 'Risks / Riscuri / Риски',
-      unresolved_question: 'Questions / Întrebări / Вопросы',
+      all: 'All',
+      risk: 'Risks',
+      unresolved_question: 'Questions',
     } as Record<string, string>,
-    noEvidence: 'No audio evidence — verify manually / Fără dovadă audio / Нет аудио-метки',
-    noItems: 'No clinical risks or unresolved questions were raised / Niciun risc identificat / Рисков не выявлено',
-    noMatch: 'No risks or unresolved questions match your filter / Niciun element nu corespunde / Нет записей по фильтру',
-    clearFilter: 'Clear filter / Resetează filtru / Сбросить фильтр',
+    auditBadge: 'Audit notice',
+    riskBadge: 'Identified Risk',
+    questionBadge: 'Unresolved Question',
+    unverifiedAudio: 'Not verified against audio',
+    severityPrefix: 'Severity:',
+    severities: {
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low',
+    } as Record<string, string>,
+    noEvidence: 'No audio evidence — verify manually',
+    noItems: 'No clinical risks or unresolved questions were raised.',
+    noMatch: 'No risks or unresolved questions match your filter.',
+    clearFilter: 'Clear filter',
   },
   ro: {
     title: 'Riscuri Clinice și Întrebări Deschise',
@@ -38,6 +48,16 @@ const I18N = {
       all: 'Toate',
       risk: 'Riscuri',
       unresolved_question: 'Întrebări',
+    } as Record<string, string>,
+    auditBadge: 'Notă de audit',
+    riskBadge: 'Risc Identificat',
+    questionBadge: 'Întrebare Nerezolvată',
+    unverifiedAudio: 'Neverificat pe baza înregistrării',
+    severityPrefix: 'Severitate:',
+    severities: {
+      high: 'Ridicată',
+      medium: 'Medie',
+      low: 'Scăzută',
     } as Record<string, string>,
     noEvidence: 'Fără dovadă audio — verificați manual',
     noItems: 'Nu au fost identificate riscuri clinice sau întrebări deschise.',
@@ -56,6 +76,16 @@ const I18N = {
       risk: 'Риски',
       unresolved_question: 'Вопросы',
     } as Record<string, string>,
+    auditBadge: 'Аудиторская заметка',
+    riskBadge: 'Выявленный риск',
+    questionBadge: 'Нерешенный вопрос',
+    unverifiedAudio: 'Не проверено по аудиозаписи',
+    severityPrefix: 'Серьезность:',
+    severities: {
+      high: 'Высокая',
+      medium: 'Средняя',
+      low: 'Низкая',
+    } as Record<string, string>,
     noEvidence: 'Нет аудио-метки — проверьте вручную',
     noItems: 'Клинических рисков или открытых вопросов не зафиксировано.',
     noMatch: 'Нет записей, соответствующих выбранному фильтру.',
@@ -72,6 +102,16 @@ const I18N = {
       all: 'All',
       risk: 'Risks',
       unresolved_question: 'Questions',
+    } as Record<string, string>,
+    auditBadge: 'Audit notice',
+    riskBadge: 'Identified Risk',
+    questionBadge: 'Unresolved Question',
+    unverifiedAudio: 'Not verified against audio',
+    severityPrefix: 'Severity:',
+    severities: {
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low',
     } as Record<string, string>,
     noEvidence: 'No audio evidence — verify manually',
     noItems: 'No clinical risks or unresolved questions were raised in this meeting.',
@@ -101,7 +141,8 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
     if (typeFilter !== 'all' && item.item_type !== typeFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      return item.description.toLowerCase().includes(q) || item.severity.toLowerCase().includes(q);
+      const localizedDesc = ((language === 'ru' && item.description_ru) || (language === 'en' && item.description_en) || item.description).toLowerCase();
+      return localizedDesc.includes(q) || item.description.toLowerCase().includes(q) || item.severity.toLowerCase().includes(q);
     }
     return true;
   });
@@ -141,12 +182,12 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
   const handleCopyItems = () => {
     if (filteredItems.length === 0) return;
     const text = filteredItems
-      .map(
-        (i, idx) =>
-          `${idx + 1}. [${i.item_type.toUpperCase()}] Severity: ${i.severity.toUpperCase()} | ${
-            i.description
-          }`
-      )
+      .map((i, idx) => {
+        const desc = (language === 'ru' && i.description_ru) || (language === 'en' && i.description_en) || i.description;
+        const typeLabel = t.types[i.item_type] || i.item_type;
+        const sev = t.severities[i.severity] || i.severity;
+        return `${idx + 1}. [${typeLabel.toUpperCase()}] ${t.severityPrefix} ${sev} | ${desc}`;
+      })
       .join('\n');
 
     navigator.clipboard.writeText(text);
@@ -268,24 +309,24 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                     {auditNote ? (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-600 text-white border border-rose-600">
                         <ShieldAlert className="w-3 h-3" aria-hidden="true" />
-                        <span>Audit notice</span>
+                        <span>{t.auditBadge}</span>
                       </span>
                     ) : isRisk ? (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200">
                         <AlertTriangle className="w-3 h-3" aria-hidden="true" />
-                        <span>Identified Risk</span>
+                        <span>{t.riskBadge}</span>
                       </span>
                     ) : (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
                         <HelpCircle className="w-3 h-3" aria-hidden="true" />
-                        <span>Unresolved Question</span>
+                        <span>{t.questionBadge}</span>
                       </span>
                     )}
 
                     {ungrounded && (
                       <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-rose-600 text-white border border-rose-600">
                         <MicOff className="w-3 h-3" aria-hidden="true" />
-                        <span>Not verified against audio</span>
+                        <span>{t.unverifiedAudio}</span>
                       </span>
                     )}
 
@@ -294,7 +335,7 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                         item.severity
                       )}`}
                     >
-                      Severity: {item.severity}
+                      {t.severityPrefix} {t.severities[item.severity] || item.severity}
                     </span>
                   </div>
 
@@ -317,7 +358,7 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                     }`}
                     lang={isDegraded ? 'ro' : undefined}
                   >
-                    {item.description}
+                    {(language === 'ru' && item.description_ru) || (language === 'en' && item.description_en) || item.description}
                   </p>
                 </div>
               </div>

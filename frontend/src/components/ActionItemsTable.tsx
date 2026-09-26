@@ -23,28 +23,32 @@ interface ActionItemsTableProps {
 
 const I18N = {
   all: {
-    title: 'Action Items & Task Directives / Plan de Acțiuni / Задачи и поручения',
-    subtitle: 'Assigned directives with clinical owners and deadlines / Responsabilități / Ответственные и сроки',
-    reviewed: 'verified by reviewer / verificat / проверено',
-    tasksCount: 'tasks / sarcini / задач',
-    copy: 'Copy / Copiază / Копировать',
-    searchPlaceholder: 'Search by task, owner, or deadline / Caută sarcini / Поиск задач...',
+    title: 'Action Items & Task Directives (Comparative View)',
+    subtitle: 'Assigned directives with clinical owners and deadlines (RO / RU / EN)',
+    reviewed: 'verified by reviewer',
+    tasksCount: 'tasks',
+    copy: 'Copy',
+    searchPlaceholder: 'Search by task, owner, or deadline across languages...',
     status: {
-      all: 'All / Toate / Все',
-      open: 'Open / Deschise / Открытые',
-      completed: 'Completed / Finalizate / Выполненные',
+      all: 'All',
+      open: 'Open',
+      completed: 'Completed',
     } as Record<string, string>,
-    priorityLabel: 'Priority / Prioritate / Приоритет:',
+    priorityLabel: 'Priority:',
     priorities: {
-      all: 'All / Toate / Все',
-      high: 'High / Ridicată / Высокий',
-      medium: 'Medium / Medie / Средний',
-      low: 'Low / Scăzută / Низкий',
+      all: 'All',
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low',
     } as Record<string, string>,
-    noEvidence: 'No audio evidence — verify manually / Fără dovadă audio / Нет аудио-метки',
-    noItems: 'No action items were extracted from this recording / Nicio sarcină extrasă / Задач не найдено',
-    noMatch: 'No action items match your search filter / Nicio sarcină nu corespunde filtrului / Нет задач по фильтру',
-    clearFilters: 'Clear filters / Resetează filtre / Сбросить фильтры',
+    verifiedBadge: 'Verified',
+    unverifiedBadge: 'Unverified',
+    unspecified: 'Unspecified',
+    priorityPrefix: 'Priority:',
+    noEvidence: 'No audio evidence — verify manually',
+    noItems: 'No action items were extracted from this recording.',
+    noMatch: 'No action items match your search filter.',
+    clearFilters: 'Clear filters',
   },
   ro: {
     title: 'Plan de Acțiuni și Responsabilități Clinice',
@@ -65,6 +69,10 @@ const I18N = {
       medium: 'Medie',
       low: 'Scăzută',
     } as Record<string, string>,
+    verifiedBadge: 'Verificat',
+    unverifiedBadge: 'Neverificat',
+    unspecified: 'Nespecificat',
+    priorityPrefix: 'Prioritate:',
     noEvidence: 'Fără dovadă audio — verificați manual',
     noItems: 'Nicio acțiune nu a fost extrasă din această înregistrare.',
     noMatch: 'Nicio sarcină nu corespunde filtrului de căutare.',
@@ -89,6 +97,10 @@ const I18N = {
       medium: 'Средний',
       low: 'Низкий',
     } as Record<string, string>,
+    verifiedBadge: 'Проверено',
+    unverifiedBadge: 'Не проверено',
+    unspecified: 'Не указан',
+    priorityPrefix: 'Приоритет:',
     noEvidence: 'Нет аудио-метки — проверьте вручную',
     noItems: 'Из этой записи не было извлечено поручений.',
     noMatch: 'Нет задач, соответствующих условиям поиска.',
@@ -113,6 +125,10 @@ const I18N = {
       medium: 'Medium',
       low: 'Low',
     } as Record<string, string>,
+    verifiedBadge: 'Verified',
+    unverifiedBadge: 'Unverified',
+    unspecified: 'Unspecified',
+    priorityPrefix: 'Priority:',
     noEvidence: 'No audio evidence — verify manually',
     noItems: 'No action items were extracted from this recording.',
     noMatch: 'No action items match your search filter.',
@@ -161,7 +177,11 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
     if (priorityFilter !== 'all' && item.priority.toLowerCase() !== priorityFilter.toLowerCase()) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
+      const localizedTask = ((language === 'ru' && item.task_ru) || (language === 'en' && item.task_en) || item.task).toLowerCase();
+      const localizedDeadline = ((language === 'ru' && item.deadline_phrase_ru) || (language === 'en' && item.deadline_phrase_en) || item.deadline_phrase || '').toLowerCase();
       return (
+        localizedTask.includes(q) ||
+        localizedDeadline.includes(q) ||
         item.task.toLowerCase().includes(q) ||
         item.owner.toLowerCase().includes(q) ||
         (item.deadline_phrase && item.deadline_phrase.toLowerCase().includes(q))
@@ -201,14 +221,18 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
   const handleCopyActions = () => {
     if (filteredItems.length === 0) return;
     const text = filteredItems
-      .map(
-        (item, idx) =>
-          `${idx + 1}. [${item.priority.toUpperCase()}] Owner: ${item.owner} | Task: ${
-            item.task
-          } | Deadline: ${item.deadline_date || item.deadline_phrase || 'Unspecified'} | Status: ${
-            item.status
-          }`
-      )
+      .map((item, idx) => {
+        const task = (language === 'ru' && item.task_ru) || (language === 'en' && item.task_en) || item.task;
+        const deadline =
+          (language === 'ru' && item.deadline_phrase_ru) ||
+          (language === 'en' && item.deadline_phrase_en) ||
+          item.deadline_date ||
+          item.deadline_phrase ||
+          t.unspecified;
+        const priority = t.priorities[item.priority] || item.priority;
+        const status = t.status[item.status] || item.status;
+        return `${idx + 1}. [${priority.toUpperCase()}] ${item.owner} | ${task} | ${deadline} | ${status}`;
+      })
       .join('\n');
 
     navigator.clipboard.writeText(text);
@@ -355,7 +379,7 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
                           item.priority
                         )}`}
                       >
-                        Priority: {item.priority}
+                        {t.priorityPrefix} {t.priorities[item.priority] || item.priority}
                       </span>
                       <span className="text-xs font-bold text-slate-800 inline-flex items-center space-x-1 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                         <User className="w-3 h-3 text-slate-500" aria-hidden="true" />
@@ -365,12 +389,12 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
                       {item.is_reviewed ? (
                         <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
                           <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
-                          <span>Verified</span>
+                          <span>{t.verifiedBadge}</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
                           <Circle className="w-3 h-3" aria-hidden="true" />
-                          <span>Unverified</span>
+                          <span>{t.unverifiedBadge}</span>
                         </span>
                       )}
                     </div>
@@ -380,7 +404,7 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
                         isCompleted ? 'line-through text-slate-500' : ''
                       }`}
                     >
-                      {item.task}
+                      {(language === 'ru' && item.task_ru) || (language === 'en' && item.task_en) || item.task}
                     </p>
                   </div>
                 </div>
@@ -389,11 +413,19 @@ export const ActionItemsTable: React.FC<ActionItemsTableProps> = ({
                 <div className="flex flex-col items-end text-xs flex-shrink-0 max-w-[45%]">
                   <div className="flex items-center space-x-1 text-slate-700 font-mono font-bold tabular-nums bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
                     <Calendar className="w-3.5 h-3.5 text-medpark-600 flex-shrink-0" aria-hidden="true" />
-                    <span>{item.deadline_date || item.deadline_phrase || 'Unspecified'}</span>
+                    <span>
+                      {(language === 'ru' && item.deadline_phrase_ru) ||
+                        (language === 'en' && item.deadline_phrase_en) ||
+                        item.deadline_date ||
+                        item.deadline_phrase ||
+                        t.unspecified}
+                    </span>
                   </div>
                   {item.deadline_phrase && item.deadline_date && (
                     <span className="text-[10px] text-slate-600 italic mt-0.5 text-right break-words">
-                      "{item.deadline_phrase}"
+                      "{(language === 'ru' && item.deadline_phrase_ru) ||
+                        (language === 'en' && item.deadline_phrase_en) ||
+                        item.deadline_phrase}"
                     </span>
                   )}
                 </div>

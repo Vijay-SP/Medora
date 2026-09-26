@@ -4,6 +4,7 @@ Medpark Meeting Intelligence System - Review Workspace & Approval Endpoints
 
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from app.models.meeting import ProcessingStatus, ReviewStatus
@@ -170,3 +171,26 @@ async def approve_and_dispatch(meeting_id: str, payload: ApprovalRequest) -> App
         revision=minutes.revision,
         delivery_record=delivery_rec
     )
+
+
+@router.post("/translate", response_model=MinutesOfMeeting)
+async def translate_minutes(
+    meeting_id: str,
+    target_lang: Literal["ro", "ru", "en"] = "ru",
+    force: bool = False,
+) -> MinutesOfMeeting:
+    """
+    Translates dynamic MoM items (topics, decisions, actions, risks) into the target language.
+    Results are cached on the minutes entity so repeated calls return instantly without extra LLM load.
+    """
+    minutes = repository.get_minutes(meeting_id)
+    if not minutes:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Minutes not generated for this meeting")
+
+    if target_lang == "ro":
+        return minutes
+
+    from app.services.translation.translation_service import translation_service
+    updated = await translation_service.translate_mom(minutes, target_lang=target_lang, force_refresh=force)
+    return updated
+

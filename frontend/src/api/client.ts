@@ -173,6 +173,22 @@ export const apiClient = {
     return res.json();
   },
 
+  async translateMinutes(
+    meetingId: string,
+    targetLang: 'ro' | 'ru' | 'en',
+    force: boolean = false
+  ): Promise<MinutesOfMeeting> {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/meetings/${meetingId}/translate?target_lang=${targetLang}&force=${force}`,
+      { method: 'POST' }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Translation failed');
+    }
+    return res.json();
+  },
+
   async approveMeeting(
     meetingId: string,
     payload: {

@@ -178,6 +178,10 @@ export interface DecisionItem {
   id: string;
   topic: string;
   decision: string;
+  topic_ru?: string | null;
+  decision_ru?: string | null;
+  topic_en?: string | null;
+  decision_en?: string | null;
   category: 'clinical' | 'budget' | 'operations' | 'protocol';
   evidence: EvidenceQuote[];
   is_reviewed: boolean;
@@ -192,8 +196,12 @@ export type OwnerSource = 'roster' | 'mention' | 'speaker' | 'unassigned' | 'con
 export interface ActionItem {
   id: string;
   task: string;
+  task_ru?: string | null;
+  task_en?: string | null;
   owner: string;
   deadline_phrase?: string;
+  deadline_phrase_ru?: string | null;
+  deadline_phrase_en?: string | null;
   deadline_date?: string;
   priority: 'high' | 'medium' | 'low';
   status: 'open' | 'in_progress' | 'completed' | 'cancelled';
@@ -206,6 +214,8 @@ export interface RiskOrQuestionItem {
   id: string;
   item_type: 'risk' | 'unresolved_question';
   description: string;
+  description_ru?: string | null;
+  description_en?: string | null;
   severity: 'high' | 'medium' | 'low';
   evidence: EvidenceQuote[];
 }
@@ -231,6 +241,8 @@ export interface MinutesOfMeeting {
   summary_ru?: string | null;
   summary_en?: string;
   agenda_topics: string[];
+  agenda_topics_ru?: string[] | null;
+  agenda_topics_en?: string[] | null;
   decisions: DecisionItem[];
   action_items: ActionItem[];
   risks_and_questions: RiskOrQuestionItem[];
