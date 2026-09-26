@@ -95,7 +95,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Center: Badges (Air-gap & System Status) */}
-        <div className="hidden lg:flex items-center space-x-3">
+        {/* <div className="hidden lg:flex items-center space-x-3">
           <div className="flex items-center space-x-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-xs font-semibold">
             <ShieldCheck className="w-4 h-4 text-emerald-600" aria-hidden="true" />
             <span>100% Air-Gapped • Local Only</span>
@@ -132,7 +132,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* LLM pill: the model name a reviewer/jury can read off the screen, plus its real state. */}
             {isOnline && !readiness && (
               <button
                 onClick={probeBackend}
@@ -171,7 +170,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
           </div>
-        </div>
+        </div> */}
 
         {/* Right: Quick Action Controls */}
         <div className="flex items-center space-x-2">
@@ -184,7 +183,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Keyboard className="w-4 h-4" aria-hidden="true" />
           </button>
 
-          {voiceIdEnabled && onOpenPeople && (
+          {/* {voiceIdEnabled && onOpenPeople && (
             <button
               onClick={onOpenPeople}
               aria-pressed={isPeopleActive}
@@ -199,9 +198,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Users className={`w-4 h-4 ${isPeopleActive ? 'text-medpark-600' : 'text-slate-500'}`} aria-hidden="true" />
               <span className="hidden sm:inline">People &amp; Voices</span>
             </button>
-          )}
+          )} */}
 
-          <button
+          {/* <button
             onClick={onOpenDeliveries}
             className="inline-flex items-center space-x-1.5 px-3 py-2 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg hover:bg-slate-50 transition-colors shadow-xs"
             title="Email Outbox (O)"
@@ -209,7 +208,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <FileText className="w-4 h-4 text-slate-500" aria-hidden="true" />
             <span className="hidden sm:inline">Outbox</span>
-          </button>
+          </button> */}
 
           <button
             onClick={onNewMeeting}
