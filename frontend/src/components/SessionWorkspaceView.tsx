@@ -652,6 +652,26 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
         />
       )}
 
+      {/* EU AI Act Article 50 & 14 AI Transparency & Human Oversight Notice Banner */}
+      <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-3.5 shadow-xs flex items-start space-x-3 text-xs text-slate-700">
+        <div className="w-7 h-7 rounded-lg bg-blue-100/80 text-blue-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+          <Shield className="w-4 h-4" aria-hidden="true" />
+        </div>
+        <div className="flex-1 min-w-0 space-y-0.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-slate-900 text-xs">
+              Notificare privind Asistența AI (EU AI Act Art. 50 &amp; Art. 14)
+            </span>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+              Draft Asistat AI • Supraveghere Umană Obligatorie
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            Transcrierile, sinteza ședinței și sarcinile sunt extrase asistat de modelele Medora AI locale. Deciziile și atribuirile de persoane sunt preliminare și necesită revizuire și asumare umană formală înainte de dispecerizarea oficială.
+          </p>
+        </div>
+      </div>
+
       {/* Tabs Navigation */}
       <div role="tablist" aria-label="Meeting workspace tabs" className="border-b border-slate-200 flex space-x-6">
         <button

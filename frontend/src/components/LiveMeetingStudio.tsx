@@ -379,6 +379,10 @@ export const LiveMeetingStudio: React.FC<LiveMeetingStudioProps> = ({
           <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
             Capture live dialogue directly from your conference mic. Medora processes everything 100% offline.
           </p>
+          <p className="text-[11px] text-blue-200/90 flex items-center space-x-1.5 pt-0.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+            <span>Notă EU AI Act (Art. 50): Înregistrarea va fi procesată prin modele AI locale; documentele generate au caracter asistat și necesită validare umană.</span>
+          </p>
         </div>
 
         <div className="flex items-center space-x-2.5 relative z-10 flex-shrink-0">

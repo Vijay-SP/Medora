@@ -21,6 +21,7 @@ export const ReviewApprovalModal: React.FC<ReviewApprovalModalProps> = ({
   const [reviewerRole, setReviewerRole] = useState('');
   const [comments, setComments] = useState('');
   const [hasVerifiedEvidence, setHasVerifiedEvidence] = useState(false);
+  const [hasAcknowledgedAIDisclaimer, setHasAcknowledgedAIDisclaimer] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasEntered, setHasEntered] = useState(false);
@@ -148,6 +149,10 @@ export const ReviewApprovalModal: React.FC<ReviewApprovalModalProps> = ({
     }
     if (!hasVerifiedEvidence) {
       setFormError('Confirm that you reviewed the minutes before signing.');
+      return;
+    }
+    if (!hasAcknowledgedAIDisclaimer) {
+      setFormError('Please acknowledge the EU AI Act AI disclaimer and clinical verification notice before signing.');
       return;
     }
     setFormError(null);
@@ -375,17 +380,41 @@ export const ReviewApprovalModal: React.FC<ReviewApprovalModalProps> = ({
             />
           </div>
 
-          {/* Explicit confirmation gate before an irreversible dispatch */}
-          <label htmlFor="approve-confirm" className="flex items-start space-x-2.5 text-xs text-slate-700 leading-relaxed cursor-pointer">
-            <input
-              id="approve-confirm"
-              type="checkbox"
-              checked={hasVerifiedEvidence}
-              onChange={(e) => setHasVerifiedEvidence(e.target.checked)}
-              className="accent-emerald-600 w-4 h-4 mt-px flex-shrink-0"
-            />
-            <span>I have listened to the audio evidence for each decision and action item.</span>
-          </label>
+          {/* EU AI Act Article 50 & 14 AI Transparency & Human Oversight Notice */}
+          <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3 space-y-1.5 text-xs text-blue-900">
+            <div className="flex items-center space-x-2 font-bold text-blue-950">
+              <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" aria-hidden="true" />
+              <span>Clauză de Conformitate AI (EU AI Act Art. 50 &amp; Art. 14)</span>
+            </div>
+            <p className="text-[11px] text-blue-800 leading-relaxed">
+              Sistemul Medora AI este un instrument de documentare asistată. În calitate de revizor, semnătura dumneavoastră confirmă efectuarea verificării umane și asumarea responsabilității clinice și administrative pentru procesul-verbal înainte de distribuire.
+            </p>
+          </div>
+
+          {/* Explicit confirmation gates before an irreversible dispatch */}
+          <div className="space-y-2">
+            <label htmlFor="approve-confirm" className="flex items-start space-x-2.5 text-xs text-slate-700 leading-relaxed cursor-pointer">
+              <input
+                id="approve-confirm"
+                type="checkbox"
+                checked={hasVerifiedEvidence}
+                onChange={(e) => setHasVerifiedEvidence(e.target.checked)}
+                className="accent-emerald-600 w-4 h-4 mt-px flex-shrink-0"
+              />
+              <span>I have listened to the audio evidence for each decision and action item.</span>
+            </label>
+
+            <label htmlFor="approve-ai-disclaimer" className="flex items-start space-x-2.5 text-xs text-slate-700 leading-relaxed cursor-pointer">
+              <input
+                id="approve-ai-disclaimer"
+                type="checkbox"
+                checked={hasAcknowledgedAIDisclaimer}
+                onChange={(e) => setHasAcknowledgedAIDisclaimer(e.target.checked)}
+                className="accent-emerald-600 w-4 h-4 mt-px flex-shrink-0"
+              />
+              <span>Confirm că am verificat conținutul generat de AI și îmi asum responsabilitatea pentru acuratețea acestuia (EU AI Act Art. 50).</span>
+            </label>
+          </div>
 
           {formError && (
             <p role="alert" className="text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
@@ -404,7 +433,7 @@ export const ReviewApprovalModal: React.FC<ReviewApprovalModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !hasVerifiedEvidence || isSigningBlocked}
+              disabled={isSubmitting || !hasVerifiedEvidence || !hasAcknowledgedAIDisclaimer || isSigningBlocked}
               aria-busy={isSubmitting}
               className="inline-flex items-center space-x-2 px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm rounded-lg shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
             >

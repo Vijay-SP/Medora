@@ -117,7 +117,10 @@ def build_body(
         f"{attachment_line}\n\n"
         f"Cu respect,\n"
         f"Sistemul Automat de Documentare a Ședințelor Medpark\n"
-        f"Spitalul Internațional Medpark\n"
+        f"Spitalul Internațional Medpark\n\n"
+        f"---\n"
+        f"Aviz de transparență AI (EU AI Act Art. 50): Acest document a fost redactat cu asistență AI "
+        f"și verificat/aprobat formal de un revizor uman înainte de transmitere.\n"
     )
     sections = ["Română (RO)\n\n" + romanian]
     languages = get_email_languages(meeting)
@@ -133,7 +136,10 @@ def build_body(
             f"Поставлено задач: {len(minutes.action_items)}\n"
             f"Риски и открытые вопросы: {len(minutes.risks_and_questions)}\n\n"
             f"Приложения: {attachment_names}. Официальные документы прилагаются на румынском языке.\n\n"
-            "С уважением,\nСистема документирования заседаний Medpark\nМеждународная больница Medpark\n"
+            "С уважением,\nСистема документирования заседаний Medpark\nМеждународная больница Medpark\n\n"
+            "---\n"
+            "Уведомление об ИИ (EU AI Act ст. 50): Данный протокол составлен с помощью ИИ "
+            "и проверен/утвержден ответственным лицом перед отправкой.\n"
         )
     if "en" in languages:
         sections.append(
@@ -143,7 +149,10 @@ def build_body(
             f"Actions assigned: {len(minutes.action_items)}\n"
             f"Risks and open questions: {len(minutes.risks_and_questions)}\n\n"
             f"Attachments: {attachment_names}. The official documents are attached in Romanian.\n\n"
-            "Kind regards,\nMedpark Meeting Documentation System\nMedpark International Hospital\n"
+            "Kind regards,\nMedpark Meeting Documentation System\nMedpark International Hospital\n\n"
+            "---\n"
+            "AI Compliance Notice (EU AI Act Art. 50): This minutes document was prepared with AI assistance "
+            "and formally verified/approved by a human reviewer prior to dispatch.\n"
         )
     return "\n--------------------\n\n".join(sections)
 

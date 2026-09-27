@@ -25,6 +25,14 @@ from app.storage.repository import repository
 DEGRADED_BANNER = "DRAFT NEVALIDAT — LLM LOCAL INDISPONIBIL"
 NAME_REVIEW_NOTICE = "Verificare nume necesară"
 
+# EU AI Act Article 50 AI Transparency & Oversight Notice
+AI_DISCLAIMER_NOTICE = (
+    "AVIZ PRIVIND ASISTENȚA AI (EU AI ACT ART. 50): Acest proces-verbal și sinteza aferentă au fost generate "
+    "cu asistența sistemului Medora AI (transcriere și procesare lingvistică offline). Documentul constituie o "
+    "propunere asistată, verificată și asumată formal de un revizor uman autorizat. Sistemul AI nu substituie "
+    "raționamentul clinic sau responsabilitatea administrativă directă."
+)
+
 # Speaker attribution legend. Printed only when a reviewer confirmed at least one printable segment;
 # the notice sentence is fixed wording shared with the review UI and must not be paraphrased.
 ATTRIBUTION_LEGEND_TITLE = "ATRIBUIREA VORBITORILOR"
@@ -362,6 +370,13 @@ class DocumentGenerator:
             review_run.bold = True
             review_run.font.color.rgb = RGBColor(184, 134, 11)
 
+        # AI Disclaimer Callout (EU AI Act Art. 50 Transparency)
+        disclaimer_p = doc.add_paragraph()
+        disclaimer_run = disclaimer_p.add_run(AI_DISCLAIMER_NOTICE)
+        disclaimer_run.italic = True
+        disclaimer_run.font.size = Pt(8.5)
+        disclaimer_run.font.color.rgb = RGBColor(90, 100, 115)
+
         # Meeting Info Grid
         doc.add_heading("Informații Generale", level=2)
         info_data = [
@@ -515,6 +530,16 @@ class DocumentGenerator:
                 new_x="LMARGIN", new_y="NEXT"
             )
         pdf.ln(3)
+
+        # AI Disclaimer Callout Box (EU AI Act Art. 50 Transparency & Oversight)
+        pdf.set_font(use_font, style_i, 7.5)
+        pdf.set_text_color(80, 90, 105)
+        pdf.set_fill_color(245, 247, 250)
+        pdf.set_draw_color(210, 220, 230)
+        pdf.set_x(10)
+        pdf.multi_cell(190, 4, safe_text(AI_DISCLAIMER_NOTICE), fill=True, border=1, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
 
         # Executive Summary Section
         pdf.set_font(use_font, style_b, 11)
