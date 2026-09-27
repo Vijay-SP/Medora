@@ -390,6 +390,19 @@ export const MeetingIntakeModal: React.FC<MeetingIntakeModalProps> = ({
             disabled={isSubmitting}
           />
 
+          {/* EU AI Act Article 50 AI Transparency Notice */}
+          <div className="flex items-start space-x-2.5 p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs text-blue-900">
+            <Shield className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="space-y-0.5">
+              <span className="font-bold text-[11px] uppercase tracking-wide text-blue-950">
+                Notă Transparență AI (EU AI Act Art. 50)
+              </span>
+              <p className="text-[11px] text-blue-800 leading-relaxed">
+                Înregistrările audio sunt procesate local prin modele offline de recunoaștere vocală și rezumare automată. Documentele rezultate sunt drafturi asistate și necesită validare umană obligatorie înainte de semnare și distribuire.
+              </p>
+            </div>
+          </div>
+
           {/* Submit */}
           <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-100">
             <button
