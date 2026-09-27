@@ -629,3 +629,25 @@ export function deduplicateDeliveries(records: DeliveryRecord[]): DeliveryRecord
   result.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   return result;
 }
+
+export interface AssistantChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ReferencedMeeting {
+  id: string;
+  title: string;
+  date: string;
+}
+
+export interface AssistantChatResponse {
+  answer: string;
+  referenced_meetings: ReferencedMeeting[];
+  metrics: {
+    total_meetings?: number;
+    total_decisions?: number;
+    lagging_actions_count?: number;
+    [key: string]: unknown;
+  };
+}

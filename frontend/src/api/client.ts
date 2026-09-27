@@ -23,6 +23,8 @@ import {
   LearningInboxResponse,
   VerifyCorrectionPayload,
   RejectCorrectionPayload,
+  AssistantChatMessage,
+  AssistantChatResponse,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -223,6 +225,27 @@ export const apiClient = {
     const minutes: MinutesOfMeeting = await res.json();
     rememberResolved(meetingId, minutes);
     return minutes;
+  },
+
+  async queryAssistant(
+    query: string,
+    history: AssistantChatMessage[] = [],
+    currentMeetingId?: string
+  ): Promise<AssistantChatResponse> {
+    const res = await fetchWithTimeout(`${API_BASE}/assistant/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        history,
+        current_meeting_id: currentMeetingId,
+      }),
+    }, 60000);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Assistant query failed');
+    }
+    return res.json();
   },
 
   async approveMeeting(

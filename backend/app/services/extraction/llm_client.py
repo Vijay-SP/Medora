@@ -141,6 +141,32 @@ class OllamaClient:
         }
         return parsed, stats
 
+    async def complete_chat(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int = 1500,
+        temperature: float = 0.2,
+        keep_alive: str = "10m",
+    ) -> str:
+        """Sends chat messages to Ollama /api/chat and returns the text response."""
+        payload = {
+            "model": self.model,
+            "stream": False,
+            "keep_alive": keep_alive,
+            "messages": messages,
+            "options": {
+                "num_ctx": settings.LLM_CONTEXT_TOKENS,
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+        }
+        resp = await self._post_chat(payload)
+        try:
+            data = resp.json()
+            return data["message"]["content"].strip()
+        except (ValueError, KeyError, TypeError) as e:
+            raise ExtractionError(f"Serverul LLM a returnat un răspuns fără conținut: {e}")
+
     async def _post_chat(self, payload: dict) -> httpx.Response:
         """One request with a single 2 s retry on 503 (model still loading / server busy)."""
         for attempt in range(2):

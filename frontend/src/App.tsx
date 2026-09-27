@@ -18,6 +18,7 @@ import { WaveformPlayerRef } from './components/WaveformPlayer';
 import { PeoplePage } from './components/voice/PeoplePage';
 import { SpeakerConfirmationPanel } from './components/voice/SpeakerConfirmationPanel';
 import { LearningCenter } from './components/learning/LearningCenter';
+import { FloatingAssistantDrawer } from './components/assistant/FloatingAssistantDrawer';
 import { Trash2, AlertCircle } from 'lucide-react';
 
 // Workspace tabs. 'speakers' exists only while /ready reports voice identification as enabled.
@@ -941,6 +942,16 @@ export const App: React.FC = () => {
       <KeyboardShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      {/* Floating Executive Assistant Drawer */}
+      <FloatingAssistantDrawer
+        currentMeetingId={selectedMeetingId || undefined}
+        onNavigateToMeeting={(meetingId) => {
+          handleSelectMeeting(meetingId);
+          setView('workspace');
+          setCurrentPage('workspace');
+        }}
       />
     </div>
   );
