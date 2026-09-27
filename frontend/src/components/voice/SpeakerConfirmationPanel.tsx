@@ -20,14 +20,17 @@ import {
   SpeakerLabelOption,
   VoiceProfile,
   SpeakerDecisionAction,
+  Attendee,
 } from '../../types';
 import { apiClient } from '../../api/client';
 import { useToast } from '../Toast';
+import { SpeakerAssignmentCard } from './SpeakerAssignmentCard';
 
 interface SpeakerConfirmationPanelProps {
   meetingId: string;
   // Revision of the minutes currently on screen; a confirmation is bound to one revision.
   revision: number | null;
+  attendees?: Attendee[];
   // Plays a clip; end is optional so an unchanged (seconds) => void seeker still works.
   onSeek: (start: number, end?: number) => void;
   // Playback position, used to count how much of the sampled audio was actually heard.
@@ -724,6 +727,7 @@ interface PendingManyToOne {
 export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> = ({
   meetingId,
   revision,
+  attendees = [],
   onSeek,
   currentTime,
   onAttributionChanged,
@@ -919,6 +923,17 @@ export const SpeakerConfirmationPanel: React.FC<SpeakerConfirmationPanelProps> =
 
   return (
     <div className="space-y-5">
+      {/* Administrator Bulk Assignment Card (EU AI Act Human-in-the-Loop) */}
+      <SpeakerAssignmentCard
+        meetingId={meetingId}
+        revision={revision}
+        attendees={attendees}
+        onAttributionChanged={() => {
+          load();
+          if (onAttributionChanged) onAttributionChanged();
+        }}
+      />
+
       {/* Header */}
       <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">

@@ -241,19 +241,14 @@ export const App: React.FC = () => {
         setActiveTab('minutes');
       } else if (e.key === '2') {
         setActiveTab('transcript');
-      } else if (e.key === '3' && voiceIdEnabled) {
+      } else if (e.key === '3') {
         setActiveTab('speakers');
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isIntakeOpen, isApprovalOpen, isOutboxOpen, isShortcutsOpen, meetingToDelete, view, voiceIdEnabled]);
-
-  // The Speakers tab cannot outlive the feature flag: fall back to the minutes when it turns off.
-  useEffect(() => {
-    if (!voiceIdEnabled && activeTab === 'speakers') setActiveTab('minutes');
-  }, [voiceIdEnabled, activeTab]);
+  }, [isIntakeOpen, isApprovalOpen, isOutboxOpen, isShortcutsOpen, meetingToDelete, view]);
 
   useEffect(() => {
     if (meetingToDelete) deleteCancelRef.current?.focus();
@@ -778,12 +773,13 @@ export const App: React.FC = () => {
               stageDetail={stageDetail}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
-              showSpeakersTab={voiceIdEnabled}
+              showSpeakersTab={true}
               speakersPanel={
                 selectedMeeting ? (
                   <SpeakerConfirmationPanel
                     meetingId={selectedMeeting.id}
                     revision={minutes?.revision ?? null}
+                    attendees={selectedMeeting.attendees}
                     onSeek={handlePlayRange}
                     currentTime={playbackTime}
                     reloadKey={speakersReloadKey}
@@ -819,6 +815,12 @@ export const App: React.FC = () => {
               onUpdateSegment={handleUpdateSegment}
               onSeekAudio={handleSeekAudio}
               onMinutesUpdated={(updated) => setMinutes(updated)}
+              onAttributionChanged={() => {
+                if (selectedMeeting) {
+                  loadMeetingData(selectedMeeting.id);
+                  loadMeetings();
+                }
+              }}
             />
           )}
 

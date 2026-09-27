@@ -16,6 +16,7 @@ import {
   SpeakersResponse,
   SpeakerCluster,
   SpeakerConfirmRequest,
+  BulkSpeakerAssignRequest,
   TranscriptSegment,
   EditKind,
   CorrectionEvent,
@@ -404,6 +405,22 @@ export const apiClient = {
       }
     );
     if (!res.ok) throw new Error(await readErrorDetail(res, 'Speaker decision was not recorded'));
+    return res.json();
+  },
+
+  async bulkAssignSpeakers(
+    meetingId: string,
+    body: BulkSpeakerAssignRequest
+  ): Promise<SpeakersResponse> {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/meetings/${meetingId}/speakers/bulk-assign`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Bulk speaker assignment failed'));
     return res.json();
   },
 

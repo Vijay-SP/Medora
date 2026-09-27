@@ -576,6 +576,20 @@ export interface SpeakerConfirmRequest {
   reviewer_role?: string;
 }
 
+export interface BulkSpeakerAssignmentItem {
+  cluster_id: string;
+  display_label?: string | null;
+  attendee_id?: string | null;
+  action?: 'label' | 'reject';
+}
+
+export interface BulkSpeakerAssignRequest {
+  assignments: BulkSpeakerAssignmentItem[];
+  expected_revision?: number;
+  reviewer_name: string;
+  reviewer_role?: string;
+}
+
 export function deduplicateDeliveries(records: DeliveryRecord[]): DeliveryRecord[] {
   const byMeeting = new Map<string, DeliveryRecord[]>();
   for (const r of records) {

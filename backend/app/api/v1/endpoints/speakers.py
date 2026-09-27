@@ -115,6 +115,20 @@ class SpeakerDecisionRequest(BaseModel):
     reviewer_role: str = "Reviewer"
 
 
+class BulkSpeakerAssignment(BaseModel):
+    cluster_id: str
+    display_label: Optional[str] = Field(None, description=f"Typed label, {LABEL_MIN_CHARS}-{LABEL_MAX_CHARS} chars, or clinical designation")
+    attendee_id: Optional[str] = Field(None, description="Meeting.attendees[].id if chosen from meeting roster")
+    action: Literal["label", "reject"] = "label"
+
+
+class BulkSpeakerAssignRequest(BaseModel):
+    assignments: list[BulkSpeakerAssignment]
+    expected_revision: Optional[int] = None
+    reviewer_name: str = Field(..., min_length=1, max_length=200)
+    reviewer_role: str = "Administrator"
+
+
 # ---------------------------------------------------------------- shared context
 class _Context:
     """Everything the read and write paths need about one meeting, loaded once."""
@@ -458,7 +472,8 @@ def _apply_decision_to_segments(
             seg.confirmed_by = reviewer
             seg.confirmed_at = now
             seg.confirmed_for_revision = revision
-            seg.printable_name = (seg.speech_seconds or 0.0) >= min_printable
+            effective_speech = seg.speech_seconds if seg.speech_seconds is not None else max(0.0, seg.end - seg.start)
+            seg.printable_name = effective_speech >= min_printable
         else:
             seg.attribution_state = "anonymous"
             seg.speaker_id = None
@@ -604,8 +619,16 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
                 detail=f"Revision conflict: you reviewed Rev.{payload.expected_revision} but the meeting is at Rev.{ctx.meeting.current_revision}. Reload before deciding.",
             )
         person: Optional[Person] = None
-        if payload.action in ("confirm", "correct", "label"):
+        if payload.action in ("confirm", "correct"):
             blockers = ctx.blocking_reasons(cluster_id, segs)
+            if blockers:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="; ".join(blockers))
+        elif payload.action == "label":
+            blockers = [
+                b for b in ctx.blocking_reasons(cluster_id, segs)
+                if "cached embeddings" not in b and "Cluster diagnostics" not in b
+                and "two voices" not in b and "distinct speech regions" not in b
+            ]
             if blockers:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="; ".join(blockers))
         if payload.action in ("confirm", "correct"):
@@ -682,3 +705,97 @@ def decide_speaker(meeting_id: str, cluster_id: str, payload: SpeakerDecisionReq
         refreshed = _Context(meeting_id)
         grouped = refreshed.clusters()
         return refreshed.build_cluster(cluster_id, grouped[cluster_id], grouped)
+
+
+@router.post("/bulk-assign", response_model=SpeakersResponse)
+def bulk_assign_speakers(meeting_id: str, payload: BulkSpeakerAssignRequest) -> SpeakersResponse:
+    """
+    Administrator batch assignment of names / designations to anonymous speaker clusters.
+    Designed for EU AI Act Human-in-the-Loop review and GDPR Article 9 compliance:
+    Processes all cluster name assignments in one atomic transaction, updates all transcript
+    segments, updates minutes (owners and quotes), regenerates PDF and DOCX with Article 50
+    transparency notices, and commits the revision.
+    """
+    with repository.lock:
+        ctx = _Context(meeting_id)
+        grouped = ctx.clusters()
+
+        if payload.expected_revision is not None and payload.expected_revision != ctx.meeting.current_revision:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Revision conflict: you reviewed Rev.{payload.expected_revision} but the meeting is at Rev.{ctx.meeting.current_revision}. Reload before deciding.",
+            )
+
+        now = datetime.now(timezone.utc)
+        reviewer = f"{payload.reviewer_name} ({payload.reviewer_role})"
+        minutes = repository.get_minutes(meeting_id)
+        if minutes is not None:
+            _bump_revision_if_signed_off(ctx.meeting, minutes)
+
+        speaker_map = repository.get_speaker_map(meeting_id) or SpeakerMap(meeting_id=meeting_id, space_id=ctx.space_id)
+        speaker_map.space_id = speaker_map.space_id or ctx.space_id
+
+        for item in payload.assignments:
+            segs = grouped.get(item.cluster_id)
+            if not segs:
+                continue
+
+            action: ConfirmAction = "label" if item.action == "label" else "reject"
+            label: Optional[str] = None
+            if action == "label":
+                if item.attendee_id:
+                    att = next((a for a in ctx.meeting.attendees if a.id == item.attendee_id), None)
+                    if not att:
+                        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Attendee {item.attendee_id} not found on this meeting")
+                    label = validate_label(att.name)
+                elif item.display_label and item.display_label.strip():
+                    label = validate_label(item.display_label)
+                else:
+                    action = "reject"
+
+            previous_name = next((seg.confirmed_display_name for seg in segs if seg.confirmed_display_name), None)
+            previous_person_id = next((seg.speaker_id for seg in segs if seg.speaker_id), None)
+            prior_suggestion = next((seg.suggestion for seg in segs if seg.suggestion), None)
+
+            _apply_decision_to_segments(
+                segs, action, None, reviewer, now, ctx.meeting.current_revision, label=label
+            )
+
+            turned_down_id = None
+            turned_down_name = None
+            if action == "reject":
+                turned_down_id = prior_suggestion.person_id if prior_suggestion else previous_person_id
+                turned_down_name = prior_suggestion.person_name if prior_suggestion else previous_name
+
+            speaker_map.events.append(SpeakerAttributionEvent(
+                meeting_id=meeting_id,
+                cluster_id=item.cluster_id,
+                action=action if action in _EVENT_ACTIONS else "correct",
+                person_id=turned_down_id,
+                person_name_snapshot=label or turned_down_name,
+                space_id=ctx.space_id,
+                reviewer=reviewer,
+                timestamp=now,
+                segment_ids=[seg.id for seg in segs],
+            ))
+
+            if minutes is not None:
+                _apply_attribution_to_minutes(
+                    minutes, ctx.transcript, segs, cluster_label(item.cluster_id) or segs[0].speaker
+                )
+
+        repository.save_transcript(ctx.transcript)
+        repository.save_speaker_map(speaker_map)
+
+        if minutes is not None:
+            pdf_path, docx_path = file_manager.get_export_paths(ctx.meeting.id, revision=minutes.revision)
+            document_generator.generate_all(ctx.meeting, minutes, pdf_path, docx_path, transcript=ctx.transcript)
+            minutes.pdf_path = str(pdf_path)
+            minutes.docx_path = str(docx_path)
+            repository.save_minutes(minutes)
+
+        repository.save_meeting(ctx.meeting)
+        logger.info(
+            f"Bulk speaker assignments applied for meeting {meeting_id} by {reviewer} at Rev.{ctx.meeting.current_revision}"
+        )
+        return _Context(meeting_id).response()

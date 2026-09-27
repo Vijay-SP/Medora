@@ -272,8 +272,7 @@ class PDFReport(FPDF):
     def footer(self):
         self.set_y(-15)
         self.set_font(self.font_family_to_use, self.italic_style, 8)
-        self.set_text_color(128, 128, 128)
-        foot_text = f"Pagina {self.page_no()} | Document Confidential de Uz Intern Medpark"
+        foot_text = f"Pagina {self.page_no()} | Medpark • Asistat de Medora AI (Art. 50 EU AI Act) • Validat de revizor"
         if self.model_version:
             foot_text += f" | Model extragere: {self.model_version}"
         self.cell(0, 10, foot_text, align="C")
@@ -363,7 +362,8 @@ class DocumentGenerator:
         info_data = [
             ("Titlu Ședință:", meeting.title),
             ("Participanți:", ", ".join([f"{a.name} ({a.department})" if a.department else a.name for a in meeting.attendees]) if meeting.attendees else "Conform foii de prezență"),
-            ("Model extragere:", minutes.model_version)
+            ("Model extragere:", minutes.model_version),
+            ("Asistență AI (Art. 50):", "Redactat cu asistență AI (Medora) • Verificat și aprobat de revizor"),
         ]
         # Languages of the stored transcript (per-window ASR language identification), omitted without segments
         languages_line = format_detected_languages(transcript)

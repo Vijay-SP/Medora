@@ -10,6 +10,7 @@ import { TranscriptViewer } from './TranscriptViewer';
 import { DecisionsTable } from './DecisionsTable';
 import { ActionItemsTable } from './ActionItemsTable';
 import { RisksQuestionsTable } from './RisksQuestionsTable';
+import { SpeakerAssignmentCard } from './voice/SpeakerAssignmentCard';
 import {
   FileText,
   Clock,
@@ -77,6 +78,7 @@ interface SessionWorkspaceViewProps {
   onUpdateSegment: (segmentId: string, text: string) => Promise<void>;
   onSeekAudio: (time: number) => void;
   onMinutesUpdated?: (minutes: MinutesOfMeeting) => void;
+  onAttributionChanged?: () => void;
 }
 
 const PIPELINE_STAGES: { key: string; label: string }[] = [
@@ -128,6 +130,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   onUpdateSegment,
   onSeekAudio,
   onMinutesUpdated,
+  onAttributionChanged,
 }) => {
   const [momLanguage, setMomLanguage] = useState<'ro' | 'ru' | 'en' | 'all'>('ro');
   const [isTranslating, setIsTranslating] = useState<'ru' | 'en' | null>(null);
@@ -709,6 +712,15 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
       {/* Tab 1: Minutes Content */}
       {activeTab === 'minutes' && (
         <div role="tabpanel" id="panel-minutes" className="space-y-6">
+          {selectedMeeting && (
+            <SpeakerAssignmentCard
+              meetingId={selectedMeeting.id}
+              revision={minutes?.revision ?? null}
+              attendees={selectedMeeting.attendees}
+              onAttributionChanged={onAttributionChanged}
+            />
+          )}
+
           {minutes ? (
             <>
               {/* MoM Language Switcher Bar */}
@@ -1234,7 +1246,16 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
 
       {/* Tab 2: Multilingual Transcript */}
       {activeTab === 'transcript' && (
-        <div role="tabpanel" id="panel-transcript">
+        <div role="tabpanel" id="panel-transcript" className="space-y-6">
+          {selectedMeeting && (
+            <SpeakerAssignmentCard
+              meetingId={selectedMeeting.id}
+              revision={minutes?.revision ?? null}
+              attendees={selectedMeeting.attendees}
+              onAttributionChanged={onAttributionChanged}
+            />
+          )}
+
           {transcript ? (
             <TranscriptViewer
               segments={transcript.segments}
