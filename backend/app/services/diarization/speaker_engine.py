@@ -240,11 +240,6 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
             f"{len(windows)} windows <= {settings.SPEAKER_WINDOW_MAX_S:.0f} s"
         )
 
-        max_clusters = getattr(settings, "SPEAKER_MAX_CLUSTERS", 6)
-        if attendees and len(attendees) > 0:
-            # Allow for registered attendees plus unlisted guest or clinic speakers
-            max_clusters = max(len(attendees) + 1, min(max_clusters, len(attendees) + 2))
-
         window_embeddings = speaker_embedder.embed_batch([slice_wav(wav, s, e) for _, s, e in windows])
 
         # Two-phase clustering: anchor turns (>= 1.2s) vs micro-turns (< 1.2s)
@@ -254,7 +249,7 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
             anchor_labels = agglomerative_cosine(
                 window_embeddings[anchor_indices],
                 settings.SPEAKER_CLUSTER_DISTANCE,
-                max_clusters=max_clusters,
+                max_clusters=None,
             )
             n_anchor_clusters = int(anchor_labels.max()) + 1
             centroids = np.zeros((n_anchor_clusters, window_embeddings.shape[1]), dtype=np.float32)
@@ -270,7 +265,7 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
             labels = agglomerative_cosine(
                 window_embeddings,
                 settings.SPEAKER_CLUSTER_DISTANCE,
-                max_clusters=max_clusters,
+                max_clusters=None,
             )
         diagnostics = diagnose_clusters(window_embeddings, labels, w_duration, w_region)
 
