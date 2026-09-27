@@ -10,7 +10,6 @@ import { TranscriptViewer } from './TranscriptViewer';
 import { DecisionsTable } from './DecisionsTable';
 import { ActionItemsTable } from './ActionItemsTable';
 import { RisksQuestionsTable } from './RisksQuestionsTable';
-import { SpeakerAssignmentCard } from './voice/SpeakerAssignmentCard';
 import {
   FileText,
   Clock,
@@ -157,33 +156,43 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
 
   const handleLanguageChange = async (newLang: 'ro' | 'ru' | 'en' | 'all') => {
     setMomLanguage(newLang);
-    if (newLang !== 'ru' && newLang !== 'en') {
+    if (newLang === 'ro') {
       return;
     }
     if (!minutes || !selectedMeeting) {
       return;
     }
 
-    const hasTranslation =
-      newLang === 'ru'
-        ? Boolean(minutes.agenda_topics_ru && minutes.agenda_topics_ru.length > 0) ||
-          Boolean(minutes.decisions?.some((d) => d.decision_ru)) ||
-          Boolean(minutes.action_items?.some((a) => a.task_ru))
-        : Boolean(minutes.agenda_topics_en && minutes.agenda_topics_en.length > 0) ||
-          Boolean(minutes.decisions?.some((d) => d.decision_en)) ||
-          Boolean(minutes.action_items?.some((a) => a.task_en));
+    const isFallback = (text?: string | null) => !text || text.startsWith('[RU] ') || text.startsWith('[EN] ');
 
-    if (!hasTranslation && !isTranslating) {
-      try {
-        setIsTranslating(newLang);
-        const updated = await apiClient.translateMinutes(selectedMeeting.id, newLang, false);
-        if (onMinutesUpdated) {
-          onMinutesUpdated(updated);
+    const checkHasTranslation = (lang: 'ru' | 'en') => {
+      if (lang === 'ru') {
+        const hasTopics = Boolean(minutes.agenda_topics_ru && minutes.agenda_topics_ru.length > 0 && !isFallback(minutes.agenda_topics_ru[0]));
+        const hasDecisions = !minutes.decisions?.length || Boolean(minutes.decisions?.some((d) => d.decision_ru && !isFallback(d.decision_ru)));
+        const hasActions = !minutes.action_items?.length || Boolean(minutes.action_items?.some((a) => a.task_ru && !isFallback(a.task_ru)));
+        return hasTopics && hasDecisions && hasActions;
+      } else {
+        const hasTopics = Boolean(minutes.agenda_topics_en && minutes.agenda_topics_en.length > 0 && !isFallback(minutes.agenda_topics_en[0]));
+        const hasDecisions = !minutes.decisions?.length || Boolean(minutes.decisions?.some((d) => d.decision_en && !isFallback(d.decision_en)));
+        const hasActions = !minutes.action_items?.length || Boolean(minutes.action_items?.some((a) => a.task_en && !isFallback(a.task_en)));
+        return hasTopics && hasDecisions && hasActions;
+      }
+    };
+
+    if (newLang === 'ru' || newLang === 'en') {
+      const hasTranslation = checkHasTranslation(newLang);
+      if (!hasTranslation && !isTranslating) {
+        try {
+          setIsTranslating(newLang);
+          const updated = await apiClient.translateMinutes(selectedMeeting.id, newLang, true);
+          if (onMinutesUpdated) {
+            onMinutesUpdated(updated);
+          }
+        } catch (err) {
+          console.error(`Failed to translate minutes to ${newLang}:`, err);
+        } finally {
+          setIsTranslating(null);
         }
-      } catch (err) {
-        console.error(`Failed to translate minutes to ${newLang}:`, err);
-      } finally {
-        setIsTranslating(null);
       }
     }
   };
@@ -674,7 +683,7 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           }`}
         >
           <Layers className="w-4 h-4" />
-          <span>{showSpeakersTab ? 'Multilingual Transcript' : 'Multilingual Transcript & Speakers'}</span>
+          <span>Multilingual Transcript</span>
           {transcript && (
             <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-bold tabular-nums">
               {transcript.segments.length}
@@ -712,15 +721,6 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
       {/* Tab 1: Minutes Content */}
       {activeTab === 'minutes' && (
         <div role="tabpanel" id="panel-minutes" className="space-y-6">
-          {selectedMeeting && (
-            <SpeakerAssignmentCard
-              meetingId={selectedMeeting.id}
-              revision={minutes?.revision ?? null}
-              attendees={selectedMeeting.attendees}
-              onAttributionChanged={onAttributionChanged}
-            />
-          )}
-
           {minutes ? (
             <>
               {/* MoM Language Switcher Bar */}
@@ -1247,15 +1247,6 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
       {/* Tab 2: Multilingual Transcript */}
       {activeTab === 'transcript' && (
         <div role="tabpanel" id="panel-transcript" className="space-y-6">
-          {selectedMeeting && (
-            <SpeakerAssignmentCard
-              meetingId={selectedMeeting.id}
-              revision={minutes?.revision ?? null}
-              attendees={selectedMeeting.attendees}
-              onAttributionChanged={onAttributionChanged}
-            />
-          )}
-
           {transcript ? (
             <TranscriptViewer
               segments={transcript.segments}

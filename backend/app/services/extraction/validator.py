@@ -356,6 +356,65 @@ def audit_person_names(minutes: MinutesOfMeeting, transcript: Transcript, meetin
     return found
 
 
+def anonymize_prose_names(minutes: MinutesOfMeeting, meeting: Meeting, transcript: Transcript) -> bool:
+    """
+    Replaces person names in MoM prose with anonymous speaker labels (Speaker 1, Speaker 2... / S1, S2...).
+    Ensures that unreviewed minutes remain strictly anonymous until an administrator explicitly
+    assigns participants in the Speakers tab.
+    """
+    attendee_map: dict[str, str] = {}
+    for idx, att in enumerate(meeting.attendees):
+        label = f"Speaker {idx + 1}"
+        for token in _name_tokens(att.name):
+            if len(token) >= PERSON_TOKEN_MIN_LENGTH and token not in PROSE_WHITELIST:
+                attendee_map[token.casefold()] = label
+        attendee_map[att.name.strip().casefold()] = label
+
+    for seg in transcript.segments:
+        for name in _titled_names(seg.display_text):
+            if name.casefold() not in attendee_map:
+                attendee_map[name.casefold()] = seg.speaker
+
+    if not attendee_map:
+        return False
+
+    sorted_keys = sorted(attendee_map.keys(), key=len, reverse=True)
+    pattern = re.compile(r"\b(" + "|".join(re.escape(k) for k in sorted_keys) + r")\b", re.IGNORECASE)
+
+    def _replace_match(m: re.Match) -> str:
+        key = m.group(0).casefold()
+        return attendee_map.get(key, m.group(0))
+
+    changed = False
+
+    def _sub_text(text: Optional[str]) -> Optional[str]:
+        nonlocal changed
+        if not text:
+            return text
+        new_text = pattern.sub(_replace_match, text)
+        if new_text != text:
+            changed = True
+        return new_text
+
+    minutes.summary_ro = _sub_text(minutes.summary_ro) or ""
+    minutes.summary_ru = _sub_text(minutes.summary_ru)
+    minutes.summary_en = _sub_text(minutes.summary_en)
+
+    minutes.agenda_topics = [_sub_text(t) or "" for t in minutes.agenda_topics]
+
+    for dec in minutes.decisions:
+        dec.topic = _sub_text(dec.topic) or ""
+        dec.decision = _sub_text(dec.decision) or ""
+
+    for act in minutes.action_items:
+        act.task = _sub_text(act.task) or ""
+
+    for risk in minutes.risks_and_questions:
+        risk.description = _sub_text(risk.description) or ""
+
+    return changed
+
+
 class EvidenceValidator:
     """Ensures 100% factual grounding by verifying citations against transcript utterances."""
 

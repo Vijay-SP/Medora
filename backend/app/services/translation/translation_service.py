@@ -7,6 +7,7 @@ Translations are persisted permanently on the MinutesOfMeeting entity to avoid d
 
 from typing import Any, Literal
 import json
+import re
 from app.core.config import settings
 from app.core.logging import logger
 from app.core.exceptions import LLMUnavailable, ExtractionError
@@ -30,6 +31,10 @@ REGULI MEDICALE ȘI DE STRUCTURĂ STRICTE:
 TRANSLATION_SCHEMA = {
     "type": "object",
     "properties": {
+        "summary": {
+            "type": "string",
+            "description": "Translated executive summary",
+        },
         "agenda_topics": {
             "type": "array",
             "items": {"type": "string"},
@@ -75,9 +80,17 @@ TRANSLATION_SCHEMA = {
 }
 
 
+_SPEAKER_TOKEN_RE = re.compile(r"(?<![\w\-/.–])(?:Speaker\s+|S)(\d{1,2})(?![\w\-/–]|[.,]\d)", re.IGNORECASE)
+
+
 def _labels_in(text: str | None) -> set[str]:
     # Speaker labels only: clinical S<n> notation ("L5-S1", "тоны S1 и S2") is content, not a label
-    return labels_in(text)
+    if not text:
+        return set()
+    found = set(labels_in(text))
+    for m in _SPEAKER_TOKEN_RE.finditer(text):
+        found.add(f"S{int(m.group(1))}")
+    return found
 
 
 def _keep_labels(source: str, translated: str, field: str, target_lang: str) -> str:
@@ -158,7 +171,8 @@ class TranslationService:
 
         # Check if there is anything to translate
         has_items = bool(
-            minutes.agenda_topics
+            minutes.summary_ro
+            or minutes.agenda_topics
             or minutes.decisions
             or minutes.action_items
             or minutes.risks_and_questions
@@ -172,21 +186,22 @@ class TranslationService:
             return minutes
 
         # Prepare extraction payload
-        payload = {
-            "agenda_topics": minutes.agenda_topics,
-            "decisions": [
-                {"id": d.id, "topic": d.topic, "decision": d.decision}
-                for d in minutes.decisions
-            ],
-            "action_items": [
-                {"id": a.id, "task": a.task, "deadline_phrase": a.deadline_phrase}
-                for a in minutes.action_items
-            ],
-            "risks_and_questions": [
-                {"id": r.id, "description": r.description}
-                for r in minutes.risks_and_questions
-            ],
-        }
+        payload = {}
+        if minutes.summary_ro:
+            payload["summary"] = minutes.summary_ro
+        payload["agenda_topics"] = minutes.agenda_topics
+        payload["decisions"] = [
+            {"id": d.id, "topic": d.topic, "decision": d.decision}
+            for d in minutes.decisions
+        ]
+        payload["action_items"] = [
+            {"id": a.id, "task": a.task, "deadline_phrase": a.deadline_phrase}
+            for a in minutes.action_items
+        ]
+        payload["risks_and_questions"] = [
+            {"id": r.id, "description": r.description}
+            for r in minutes.risks_and_questions
+        ]
 
         system_prompt = TRANSLATION_SYSTEM_PROMPT.format(
             target_name=meta["name"],
@@ -203,7 +218,7 @@ class TranslationService:
                 system=system_prompt,
                 user=user_prompt,
                 schema=TRANSLATION_SCHEMA,
-                max_tokens=min(settings.LLM_MAX_TOKENS, 4096),
+                max_tokens=min(settings.LLM_TRANSLATION_MAX_TOKENS, 3072),
                 seed=settings.LLM_SEED,
                 keep_alive=settings.LLM_KEEP_ALIVE,
             )
@@ -230,6 +245,15 @@ class TranslationService:
         target_lang: TargetLanguage,
     ) -> None:
         """Maps LLM translation JSON back to MinutesOfMeeting entity."""
+        # 0. Executive Summary
+        trans_sum = result.get("summary")
+        if trans_sum and isinstance(trans_sum, str) and trans_sum.strip():
+            safe_sum = _keep_labels(minutes.summary_ro or "", trans_sum.strip(), "summary", target_lang)
+            if target_lang == "ru":
+                minutes.summary_ru = safe_sum
+            elif target_lang == "en":
+                minutes.summary_en = safe_sum
+
         # 1. Agenda Topics
         translated_topics = [t.strip() for t in result.get("agenda_topics", []) if isinstance(t, str) and t.strip()]
         if len(translated_topics) == len(minutes.agenda_topics):
@@ -299,6 +323,8 @@ class TranslationService:
         """Deterministic fallback when LLM is unavailable: preserves text with clean metadata."""
         prefix = "[RU] " if target_lang == "ru" else "[EN] "
         if target_lang == "ru":
+            if not minutes.summary_ru and minutes.summary_ro:
+                minutes.summary_ru = f"{prefix}{minutes.summary_ro}"
             minutes.agenda_topics_ru = [f"{prefix}{t}" for t in minutes.agenda_topics]
             for d in minutes.decisions:
                 d.topic_ru = d.topic
@@ -309,6 +335,8 @@ class TranslationService:
             for r in minutes.risks_and_questions:
                 r.description_ru = f"{prefix}{r.description}"
         elif target_lang == "en":
+            if not minutes.summary_en and minutes.summary_ro:
+                minutes.summary_en = f"{prefix}{minutes.summary_ro}"
             minutes.agenda_topics_en = [f"{prefix}{t}" for t in minutes.agenda_topics]
             for d in minutes.decisions:
                 d.topic_en = d.topic

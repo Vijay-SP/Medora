@@ -241,8 +241,10 @@ class EmbeddingDiarizer(BaseDiarizationEngine):
         )
 
         max_clusters = getattr(settings, "SPEAKER_MAX_CLUSTERS", 5)
-        if attendees:
-            max_clusters = max(2, min(max_clusters, len(attendees) + 1))
+        if attendees and len(attendees) > 0:
+            max_clusters = max(1, min(max_clusters, len(attendees)))
+        else:
+            max_clusters = min(max_clusters, 2)
 
         window_embeddings = speaker_embedder.embed_batch([slice_wav(wav, s, e) for _, s, e in windows])
 

@@ -471,9 +471,8 @@ def _apply_decision_to_segments(
             seg.confirmed_display_name = name
             seg.confirmed_by = reviewer
             seg.confirmed_at = now
-            seg.confirmed_for_revision = revision
             effective_speech = seg.speech_seconds if seg.speech_seconds is not None else max(0.0, seg.end - seg.start)
-            seg.printable_name = effective_speech >= min_printable
+            seg.printable_name = True if action == "label" else (effective_speech >= min_printable)
         else:
             seg.attribution_state = "anonymous"
             seg.speaker_id = None
@@ -519,19 +518,43 @@ def _apply_attribution_to_minutes(
     for action in minutes.action_items:
         evidence_segs = [seg_by_id.get(q.segment_id) for q in action.evidence]
         evidence_in_cluster = bool(evidence_segs) and all(seg is not None and seg.id in cluster_ids for seg in evidence_segs)
-        if not evidence_in_cluster:
-            continue
-        # Only "confirmed_speaker" owners are ever written by this handler, and with all evidence inside this
-        # cluster only a decision on THIS cluster can have written it; anonymous owners must name this cluster.
-        tied = action.owner_source == "confirmed_speaker" or (action.owner_source == "speaker" and action.owner == display_label)
+        tied = action.owner == display_label or evidence_in_cluster or (action.owner_source == "confirmed_speaker" and evidence_in_cluster)
         if not tied:
             continue
-        if new_name and all(seg.printable_name for seg in evidence_segs):
-            action.owner = new_name
-            action.owner_source = "confirmed_speaker"
+        if new_name:
+            if evidence_segs and not all(seg.printable_name for seg in evidence_segs):
+                action.owner = display_label
+                action.owner_source = "speaker"
+            else:
+                action.owner = new_name
+                action.owner_source = "confirmed_speaker"
         else:
-            action.owner = evidence_segs[0].speaker
+            action.owner = display_label
             action.owner_source = "speaker"
+
+    if new_name:
+        num_match = re.search(r"\d+", display_label)
+        tokens_to_replace = [display_label]
+        if num_match:
+            n = num_match.group(0)
+            tokens_to_replace.extend([f"S{n}", f"Vorbitorul {n}", f"Участник {n}"])
+
+        rep_pattern = re.compile(r"\b(" + "|".join(re.escape(t) for t in tokens_to_replace) + r")\b", re.IGNORECASE)
+
+        def _sub_txt(t: Optional[str]) -> Optional[str]:
+            return rep_pattern.sub(new_name, t) if t else t
+
+        minutes.summary_ro = _sub_txt(minutes.summary_ro) or ""
+        minutes.summary_en = _sub_txt(minutes.summary_en)
+        minutes.summary_ru = _sub_txt(minutes.summary_ru)
+        minutes.agenda_topics = [_sub_txt(top) or "" for top in minutes.agenda_topics]
+        for d in minutes.decisions:
+            d.topic = _sub_txt(d.topic) or ""
+            d.decision = _sub_txt(d.decision) or ""
+        for a in minutes.action_items:
+            a.task = _sub_txt(a.task) or ""
+        for r in minutes.risks_and_questions:
+            r.description = _sub_txt(r.description) or ""
 
 
 def _rejected_people(speaker_map: Optional[SpeakerMap]) -> dict[str, set[str]]:
@@ -793,6 +816,37 @@ def bulk_assign_speakers(meeting_id: str, payload: BulkSpeakerAssignRequest) -> 
             minutes.pdf_path = str(pdf_path)
             minutes.docx_path = str(docx_path)
             repository.save_minutes(minutes)
+
+            # Refresh existing delivery records in outbox for this revision
+            for delivery in repository.list_deliveries(meeting_id):
+                if delivery.revision == minutes.revision:
+                    delivery.pdf_attachment_path = str(pdf_path)
+                    delivery.docx_attachment_path = str(docx_path)
+                    try:
+                        from app.services.delivery.smtp_service import build_body, save_message
+                        from app.services.delivery.router import delivery_router
+                        from email.message import EmailMessage
+                        from email.utils import format_datetime, make_msgid
+                        from email import policy
+                        delivery.body_text = build_body(ctx.meeting, minutes, pdf_path, docx_path)
+                        to_list, cc_list = delivery_router.split_to_cc(ctx.meeting, delivery.recipients)
+                        msg = EmailMessage()
+                        msg["Subject"] = delivery.subject
+                        msg["From"] = delivery.from_header or f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+                        msg["Date"] = format_datetime(delivery.created_at)
+                        msg["Message-ID"] = make_msgid(domain="medpark.local")
+                        msg["To"] = ", ".join(to_list)
+                        if cc_list:
+                            msg["Cc"] = ", ".join(cc_list)
+                        msg.set_content(delivery.body_text, cte="quoted-printable")
+                        if pdf_path.exists():
+                            msg.add_attachment(pdf_path.read_bytes(), maintype="application", subtype="pdf", filename=pdf_path.name)
+                        if docx_path.exists():
+                            msg.add_attachment(docx_path.read_bytes(), maintype="application", subtype="vnd.openxmlformats-officedocument.wordprocessingml.document", filename=docx_path.name)
+                        save_message(delivery, msg.as_bytes(policy=policy.SMTP))
+                    except Exception as exc:
+                        logger.warning(f"Could not refresh delivery EML: {exc}")
+                    repository.save_delivery(delivery)
 
         repository.save_meeting(ctx.meeting)
         logger.info(

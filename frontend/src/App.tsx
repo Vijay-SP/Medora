@@ -771,9 +771,9 @@ export const App: React.FC = () => {
               pipelineProgress={pipelineProgress}
               pipelineStage={pipelineStage}
               stageDetail={stageDetail}
-              activeTab={activeTab}
+              activeTab={activeTab === 'speakers' ? 'minutes' : activeTab}
               setActiveTab={setActiveTab}
-              showSpeakersTab={true}
+              showSpeakersTab={false}
               speakersPanel={
                 selectedMeeting ? (
                   <SpeakerConfirmationPanel

@@ -352,14 +352,47 @@ export const RisksQuestionsTable: React.FC<RisksQuestionsTableProps> = ({
                     </p>
                   )}
 
-                  <p
-                    className={`text-sm leading-snug break-words ${
-                      isDegraded ? 'text-slate-700' : 'font-semibold text-slate-900'
-                    }`}
-                    lang={isDegraded ? 'ro' : undefined}
-                  >
-                    {(language === 'ru' && item.description_ru) || (language === 'en' && item.description_en) || item.description}
-                  </p>
+                  {language === 'all' ? (
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="flex items-start space-x-2">
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-medpark-50 text-medpark-700 border border-medpark-200 flex-shrink-0 mt-0.5">
+                          RO
+                        </span>
+                        <p className={`text-sm leading-snug break-words ${isDegraded ? 'text-slate-700' : 'font-semibold text-slate-900'}`}>
+                          {item.description}
+                        </p>
+                      </div>
+                      {item.description_ru && !item.description_ru.startsWith('[RU] ') && (
+                        <div className="flex items-start space-x-2">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 flex-shrink-0 mt-0.5">
+                            RU
+                          </span>
+                          <p className="text-sm font-medium text-slate-800 leading-snug break-words">
+                            {item.description_ru}
+                          </p>
+                        </div>
+                      )}
+                      {item.description_en && !item.description_en.startsWith('[EN] ') && (
+                        <div className="flex items-start space-x-2">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0 mt-0.5">
+                            EN
+                          </span>
+                          <p className="text-sm font-medium text-slate-800 leading-snug break-words">
+                            {item.description_en}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p
+                      className={`text-sm leading-snug break-words ${
+                        isDegraded ? 'text-slate-700' : 'font-semibold text-slate-900'
+                      }`}
+                      lang={isDegraded ? 'ro' : undefined}
+                    >
+                      {(language === 'ru' && item.description_ru) || (language === 'en' && item.description_en) || item.description}
+                    </p>
+                  )}
                 </div>
               </div>
 

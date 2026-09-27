@@ -285,9 +285,42 @@ export const DecisionsTable: React.FC<DecisionsTableProps> = ({ decisions, onSee
                       </span>
                     )}
                   </div>
-                  <p className="text-sm font-semibold text-slate-900 leading-snug break-words">
-                    {(language === 'ru' && d.decision_ru) || (language === 'en' && d.decision_en) || d.decision}
-                  </p>
+                  {language === 'all' ? (
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="flex items-start space-x-2">
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-medpark-50 text-medpark-700 border border-medpark-200 flex-shrink-0 mt-0.5">
+                          RO
+                        </span>
+                        <p className="text-sm font-semibold text-slate-900 leading-snug break-words">
+                          {d.decision}
+                        </p>
+                      </div>
+                      {d.decision_ru && !d.decision_ru.startsWith('[RU] ') && (
+                        <div className="flex items-start space-x-2">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 flex-shrink-0 mt-0.5">
+                            RU
+                          </span>
+                          <p className="text-sm font-medium text-slate-800 leading-snug break-words">
+                            {d.decision_ru}
+                          </p>
+                        </div>
+                      )}
+                      {d.decision_en && !d.decision_en.startsWith('[EN] ') && (
+                        <div className="flex items-start space-x-2">
+                          <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0 mt-0.5">
+                            EN
+                          </span>
+                          <p className="text-sm font-medium text-slate-800 leading-snug break-words">
+                            {d.decision_en}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-semibold text-slate-900 leading-snug break-words">
+                      {(language === 'ru' && d.decision_ru) || (language === 'en' && d.decision_en) || d.decision}
+                    </p>
+                  )}
                 </div>
               </div>
 

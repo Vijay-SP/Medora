@@ -40,6 +40,7 @@ from app.services.extraction.validator import (
     resolve_owner,
     audit_free_prose,
     audit_person_names,
+    anonymize_prose_names,
     ground_speaker_labels,
     normalise_text,
 )
@@ -249,6 +250,7 @@ class LocalLLMExtractor(BaseExtractor):
         # Synthesis: summaries and agenda from the merged items only (never the transcript)
         synthesis_note = await self._synthesise(minutes, merged_decisions, merged_actions, merged_risks, meeting_type, stats)
         summary_repaired = self._ground_summary_labels(minutes, segments)
+        anonymize_prose_names(minutes, meeting, transcript)
 
         # Prose audit over the LLM-authored text ONLY: it runs before any engine- or validator-authored note
         # ("NOTĂ AUDIT", "[NEVERIFICAT AUDIO]") is appended, so the engine can never flag its own vocabulary.

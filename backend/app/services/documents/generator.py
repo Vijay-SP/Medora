@@ -187,7 +187,12 @@ def render_minutes_for_reader(minutes: MinutesOfMeeting, transcript: Transcript)
         for shown_quote, stored_quote in zip(shown_item.evidence, stored_item.evidence):
             shown_quote.speaker = stored_quote.speaker
     for shown_action, stored_action in zip(shown.action_items, minutes.action_items):
-        shown_action.owner = stored_action.owner
+        if stored_action.owner and not ANONYMOUS_SPEAKER_LABEL.match(stored_action.owner):
+            shown_action.owner = stored_action.owner
+        elif shown_action.owner:
+            pass
+        else:
+            shown_action.owner = stored_action.owner
     return shown
 
 
