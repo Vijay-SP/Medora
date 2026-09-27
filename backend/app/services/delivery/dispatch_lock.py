@@ -31,4 +31,8 @@ def record_outcome(record: DeliveryRecord):
                 current.review_status = ReviewStatus.DELIVERED
             current.error_message = record.error_message
             repository.save_meeting(current)
+        elif record.status == DeliveryStatus.DISPATCHED and current.review_status == ReviewStatus.APPROVED:
+            current.review_status = ReviewStatus.DELIVERED
+            current.error_message = None
+            repository.save_meeting(current)
         return current

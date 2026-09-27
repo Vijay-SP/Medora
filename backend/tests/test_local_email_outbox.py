@@ -241,7 +241,7 @@ class OutboxTests(unittest.TestCase):
         meeting.original_audio_path = str(ROOT / "synthetic.wav")
         repository.save_meeting(meeting)
         segments = [TranscriptSegment(id="seg-1", start=0, end=4, raw_text="Discutăm protocolul.", speaker="Speaker 1", language="ro")]
-        engine = SimpleNamespace(device="cpu", transcribe=lambda *args: segments, release_model=lambda: None)
+        engine = SimpleNamespace(device="cpu", transcribe=lambda *args, **kwargs: segments, release_model=lambda: None)
         with patch.object(pipeline.extraction_engine, "preflight", new=AsyncMock(return_value="test")), \
              patch.object(pipeline.extraction_engine, "extract_minutes", new=AsyncMock(return_value=minutes)), \
              patch.object(pipeline.audio_preprocessor, "normalize", return_value=("unused", 4)), \
