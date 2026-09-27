@@ -1,0 +1,37 @@
+{
+  "version": "2026.09-v1",
+  "language": "mixed",
+  "description": "Code switching and mixed-language clinical expressions in hospital discourse",
+  "rules": [
+    {
+      "id": "cs_obhod_01",
+      "language": "mixed",
+      "variants": ["obhod", "обход"],
+      "canonical": "vizită medicală",
+      "scope": "administrative",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "cs_urgent_intake_01",
+      "language": "mixed",
+      "variants": ["urgent intake", "урджент"],
+      "canonical": "primire urgențe",
+      "scope": "administrative",
+      "action": "suggest_only",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "cs_analize_srochno_01",
+      "language": "mixed",
+      "variants": ["analize srochno", "analize срочно"],
+      "canonical": "analize în regim de urgență",
+      "scope": "clinical",
+      "action": "suggest_only",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    }
+  ]
+}

@@ -71,10 +71,14 @@ class DeliveryRouter:
         Dispatch guard shared by the auto-pilot pipeline and the reviewer approval endpoint.
         A document produced by the heuristic fallback is a draft nobody validated: it never leaves
         the building, whichever channel was about to send it.
+        Stale minutes resulting from post-extraction transcript edits are blocked from dispatch.
         """
         if minutes.is_degraded:
             logger.warning(f"Dispatch refused for meeting {minutes.meeting_id}: minutes Rev.{minutes.revision} are a degraded draft ({minutes.model_version})")
             raise DeliveryError("Documentul este un DRAFT degradat (LLM local indisponibil) și nu poate fi expediat")
+        if minutes.needs_transcript_review:
+            logger.warning(f"Dispatch refused for meeting {minutes.meeting_id}: minutes Rev.{minutes.revision} are stale after transcript edit")
+            raise DeliveryError("Transcriptul a fost modificat ulterior generării procesului-verbal. Este necesară re-extragerea procesului-verbal înainte de expediere (needs_transcript_review).")
 
     def get_subject_line(self, meeting: Meeting, revision: int = 1) -> str:
         policy = self._get_policy(meeting)

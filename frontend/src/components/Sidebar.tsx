@@ -14,6 +14,7 @@ import {
   Layers,
   Archive,
   Users,
+  GraduationCap,
 } from 'lucide-react';
 import { MedoraLogo } from './MedoraLogo';
 import { Meeting } from '../types';
@@ -24,6 +25,7 @@ export type AppPage =
   | 'workspace'
   | 'live'
   | 'people'
+  | 'learning'
   | 'deliveries'
   | 'settings';
 
@@ -101,6 +103,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: Users,
           badge: voiceIdEnabled ? 'Profiles' : undefined,
           badgeColor: 'bg-blue-50 text-blue-700 border border-blue-200 font-medium',
+        },
+        {
+          id: 'learning',
+          label: 'Adaptation & Learning',
+          icon: GraduationCap,
         },
         {
           id: 'deliveries',

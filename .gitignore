@@ -35,6 +35,7 @@ data/
 *.webm
 *.pdf
 *.docx
+*.zip
 
 # Environment variables & secrets
 .env

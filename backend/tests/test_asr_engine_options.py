@@ -315,8 +315,12 @@ def test_engine_restricts_lid_forces_token_and_stitches(tmp: Path, hf):
     assert (w0[0].start, w0[0].end) == (0.5, 4.0) and w0[0].raw_text == "Pacientul este stabil și rămâne în secție."
     assert w0[0].confidence == 0.94 and w0[0].asr_avg_logprob == -0.3 and w0[0].asr_compression_ratio == 1.2
     assert w0[0].is_flagged is False and w0[0].flag_reason is None
-    # lexicon applied, original recoverable, digit review-flag from the existing rules (not garbage)
-    assert w0[1].raw_text == "Am administrat noradrenalină 4 mg."
+    # lexicon applied, original decoder text preserved in raw_text, normalized_text holds the normalized form
+    assert w0[1].raw_text == "Am administrat noradrenalina 4 mg."
+    assert w0[1].normalized_text == "Am administrat noradrenalină 4 mg."
+    assert w0[1].display_text == "Am administrat noradrenalină 4 mg."
+    assert w0[1].raw_text_origin == "decoder"
+    assert w0[1].normalization_version == "lexicon_v1"
     assert [(c.was, c.now) for c in w0[1].corrections] == [("noradrenalina", "noradrenalină")]
     assert w0[1].is_flagged and "numerical" in w0[1].flag_reason
     assert all(s.speaker == "Speaker 1" and s.attribution_state == "anonymous" for s in segments)

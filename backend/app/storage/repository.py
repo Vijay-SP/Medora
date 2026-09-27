@@ -144,6 +144,13 @@ class MeetingRepository:
             except Exception as exc:
                 logger.warning(f"Could not purge segment embeddings of meeting {meeting_id}, they remain on disk: {exc}")
 
+            # Enforce adaptation retention & consent invalidation
+            try:
+                from app.services.learning.retention import invalidate_source
+                invalidate_source(meeting_id, reason="meeting_deleted")
+            except Exception as exc:
+                logger.warning(f"Could not invalidate adaptation records for meeting {meeting_id}: {exc}")
+
             logger.info(f"Deleted meeting {meeting_id} with transcript, minutes, deliveries, speaker map and artifacts")
             return True
 

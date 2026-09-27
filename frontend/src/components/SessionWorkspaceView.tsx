@@ -132,6 +132,25 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
   const [momLanguage, setMomLanguage] = useState<'ro' | 'ru' | 'en' | 'all'>('ro');
   const [isTranslating, setIsTranslating] = useState<'ru' | 'en' | null>(null);
   const [dismissedRevisionKey, setDismissedRevisionKey] = useState<string | null>(null);
+  const [isRefreshingMinutes, setIsRefreshingMinutes] = useState(false);
+  const [refreshMinutesError, setRefreshMinutesError] = useState<string | null>(null);
+
+  const handleRefreshMinutes = async () => {
+    if (!selectedMeeting) return;
+    setIsRefreshingMinutes(true);
+    setRefreshMinutesError(null);
+    try {
+      const updated = await apiClient.refreshMinutes(selectedMeeting.id);
+      if (onMinutesUpdated) {
+        onMinutesUpdated(updated);
+      }
+    } catch (err) {
+      console.error('Failed to refresh minutes:', err);
+      setRefreshMinutesError(err instanceof Error ? err.message : 'Failed to refresh minutes');
+    } finally {
+      setIsRefreshingMinutes(false);
+    }
+  };
 
   const handleLanguageChange = async (newLang: 'ro' | 'ru' | 'en' | 'all') => {
     setMomLanguage(newLang);
@@ -220,7 +239,9 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           : 'No audio has been processed for this meeting yet.'
         : !minutes
           ? 'No minutes were generated, so there is nothing to sign.'
-          : null;
+          : minutes.needs_transcript_review
+            ? 'Stale minutes: refresh before sign-off'
+            : null;
 
   return (
     <div className="w-full space-y-6">
@@ -279,6 +300,48 @@ export const SessionWorkspaceView: React.FC<SessionWorkspaceViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Stale Minutes Alert Banner */}
+      {minutes?.needs_transcript_review && (
+        <div
+          role="alert"
+          className="bg-amber-50 border-2 border-amber-400 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-900 shadow-xs"
+        >
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-bold text-xs text-amber-950">
+                Transcript was modified after minutes were generated. Minutes must be refreshed before sign-off.
+              </p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                New transcript revisions have invalidated the current draft summary and action items. Refreshing will re-extract minutes based on the latest verified transcript.
+              </p>
+              {refreshMinutesError && (
+                <p className="text-xs font-semibold text-rose-600 mt-1">
+                  {refreshMinutesError}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={handleRefreshMinutes}
+            disabled={isRefreshingMinutes}
+            className="inline-flex items-center space-x-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex-shrink-0 disabled:opacity-50"
+          >
+            {isRefreshingMinutes ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>Refreshing...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Refresh Minutes</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Review Flags Banner - Compact Single Line */}
       {showReviewFlags && !isFlagsDismissed && (

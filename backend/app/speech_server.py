@@ -144,6 +144,7 @@ def create_app(config: SpeechSettings, engine: Any = None) -> FastAPI:
         file: UploadFile = File(...),
         language: Optional[str] = Form(None),
         initial_prompt: Optional[str] = Form(None),
+        context: Optional[str] = Form(None),
         idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
         auth: None = Depends(verify_auth),
     ):
@@ -202,13 +203,25 @@ def create_app(config: SpeechSettings, engine: Any = None) -> FastAPI:
         final_audio_path = job_dir / "audio.wav"
         shutil.move(str(staging_path), str(final_audio_path))
 
-        # 8. Enqueue job
+        # 8. Extract prompt from context if present
+        context_prompt_seed = None
+        if context:
+            try:
+                parsed_ctx = json.loads(context)
+                if isinstance(parsed_ctx, dict) and parsed_ctx.get("prompt_seed"):
+                    context_prompt_seed = parsed_ctx["prompt_seed"]
+            except Exception:
+                pass
+
+        effective_prompt = initial_prompt or context_prompt_seed
+
+        # 9. Enqueue job
         queue.enqueue_job(
             job_id=job_id,
             audio_path=final_audio_path,
             duration_seconds=duration,
             language=language,
-            initial_prompt=initial_prompt,
+            initial_prompt=effective_prompt,
             idempotency_key=idempotency_key,
         )
 

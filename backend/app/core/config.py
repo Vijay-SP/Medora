@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     EXPORTS_DIR: Path = DATA_DIR / "exports"
     MODELS_DIR: Path = DATA_DIR / "models"
     FIXTURES_DIR: Path = DATA_DIR / "fixtures"
+    ADAPTATION_DIR: Path | None = None
+
+    # ASR Learning & Adaptation
+    ASR_LEARNING_ENABLED: bool = False
+    ASR_DYNAMIC_CONTEXT_ENABLED: bool = False
     
     # Regional & Localization Defaults
     DEFAULT_TIMEZONE: str = "Europe/Chisinau"
@@ -175,6 +180,12 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def resolve_adaptation_directory(self):
+        if self.ADAPTATION_DIR is None:
+            self.ADAPTATION_DIR = self.DATA_DIR / "adaptation"
+        return self
+
+    @model_validator(mode="after")
     def resolve_smtp_tls_defaults(self):
         if self.SMTP_USE_TLS:
             self.SMTP_STARTTLS = False
@@ -185,7 +196,10 @@ class Settings(BaseSettings):
 
     def ensure_directories(self) -> None:
         """Create all required local directories if they do not exist."""
-        for path in [self.DATA_DIR, self.UPLOADS_DIR, self.EXPORTS_DIR, self.MODELS_DIR, self.FIXTURES_DIR, self.VOICEPRINTS_DIR, self.OUTBOX_DIR]:
+        dirs = [self.DATA_DIR, self.UPLOADS_DIR, self.EXPORTS_DIR, self.MODELS_DIR, self.FIXTURES_DIR, self.VOICEPRINTS_DIR, self.OUTBOX_DIR]
+        if self.ADAPTATION_DIR:
+            dirs.append(self.ADAPTATION_DIR)
+        for path in dirs:
             path.mkdir(parents=True, exist_ok=True)
 
 

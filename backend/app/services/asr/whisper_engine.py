@@ -45,10 +45,65 @@ from app.core.exceptions import ASREngineError
 from app.core.logging import logger
 from app.models.transcript import TranscriptSegment
 from app.services.asr.base import BaseASREngine
-from app.services.asr.glossary import MEDPARK_MEDICAL_VOCABULARY, hotwords_for
+from app.services.asr.dynamic_context import ASRContext
+from app.services.asr.glossary import HOTWORDS_MAX_TOKENS, MEDPARK_MEDICAL_VOCABULARY, hotwords_for
+from app.services.asr.dialect_adapter import normalize_dialect
 from app.services.asr.lexicon import correct_segment
 from app.services.asr.text_lid import TextLID, detect_text_language, language_spans
 from app.services.asr.windowing import SAMPLE_RATE, DecodeWindow, pack_windows, speech_regions
+
+
+def resolve_window_hotwords(
+    language: str,
+    context: Optional[ASRContext],
+    tokenizer: Any,
+) -> Optional[str]:
+    """
+    Combines per-language base hotwords with meeting-specific context hotwords.
+    Context hotwords take priority, budgeted to <= HOTWORDS_MAX_TOKENS (80 tokens).
+    """
+    if not settings.ASR_HOTWORDS_ENABLED:
+        return None
+    base_hw = hotwords_for(language) or ""
+    if not context or not context.hotwords:
+        return base_hw if base_hw else None
+
+    combined_items: list[str] = []
+    seen = set()
+
+    # 1. Prepend context hotwords (highest priority: doctor names, department terms)
+    for item in context.hotwords:
+        clean = item.strip()
+        key = clean.lower()
+        if clean and key not in seen:
+            seen.add(key)
+            combined_items.append(clean)
+
+    # 2. Append base clinical hotwords
+    if base_hw:
+        for item in base_hw.split(","):
+            clean = item.strip()
+            key = clean.lower()
+            if clean and key not in seen:
+                seen.add(key)
+                combined_items.append(clean)
+
+    # 3. Budget strictly to <= 80 tokens
+    selected_items: list[str] = []
+    current_str = ""
+    for item in combined_items:
+        candidate = f"{current_str}, {item}" if current_str else item
+        try:
+            tok_count = len(tokenizer.encode(" " + candidate.strip(), add_special_tokens=False).ids)
+        except Exception:
+            tok_count = len(candidate.split()) * 2
+        if tok_count <= HOTWORDS_MAX_TOKENS:
+            selected_items.append(item)
+            current_str = candidate
+        else:
+            break
+
+    return current_str if current_str else None
 
 # Vocabulary whose presence marks a segment for human verification, matched on word boundaries.
 # A plain substring test flags nearly every Romanian sentence, because short acronyms such as
@@ -243,11 +298,19 @@ class MedparkBatchedPipeline(_BaseBatched):
     Everything else (max_length check, generate() call, score recovery) is verbatim.
     """
 
-    def __init__(self, model: WhisperModel, allowed_languages: list[str], forced_language: Optional[str] = None, hotwords_enabled: bool = True):
+    def __init__(
+        self,
+        model: WhisperModel,
+        allowed_languages: list[str],
+        forced_language: Optional[str] = None,
+        hotwords_enabled: bool = True,
+        context: Optional[ASRContext] = None,
+    ):
         super().__init__(model)
         self.allowed_languages = allowed_languages
         self.forced_language = forced_language
         self.hotwords_enabled = hotwords_enabled
+        self.context = context
         self.chunk_lids: list[dict] = []
         self._current_durations: list[float] = []
         self._previous_language: Optional[str] = forced_language
@@ -264,7 +327,7 @@ class MedparkBatchedPipeline(_BaseBatched):
         space = tokenizer.encode(" ")
         sections: list[list[int]] = []
         for language in chunk_languages:
-            hotwords = hotwords_for(language) if self.hotwords_enabled else None
+            hotwords = resolve_window_hotwords(language, self.context, tokenizer) if self.hotwords_enabled else None
             sections.append(tokenizer.encode(" " + hotwords.strip()) if hotwords else [])
         longest = max(len(section) for section in sections)
         prompts = []
@@ -452,7 +515,9 @@ class FasterWhisperEngine(BaseASREngine):
         self,
         audio_path: Path,
         initial_prompt: Optional[str] = None,
-        language: Optional[str] = None
+        language: Optional[str] = None,
+        *,
+        context: Optional[ASRContext] = None,
     ) -> list[TranscriptSegment]:
         """
         Transcribes audio with per-window language identification and automatic CPU fallback.
@@ -478,7 +543,7 @@ class FasterWhisperEngine(BaseASREngine):
         # cuBLAS is loaded lazily at the first matrix multiply, so a CUDA runtime failure surfaces
         # HERE rather than at model load. It is only downgraded to CPU when explicitly allowed.
         try:
-            return self._run_transcription(audio_path, language, strategy)
+            return self._run_transcription(audio_path, language, strategy, context=context)
         except Exception as e:
             err_str = str(e)
             cuda_runtime_failure = self.device == "cuda" and (
@@ -497,7 +562,7 @@ class FasterWhisperEngine(BaseASREngine):
                 # instead of leaking a raw CTranslate2 exception to the pipeline and the API.
                 try:
                     self.load_model(force_cpu=True)
-                    return self._run_transcription(audio_path, language, strategy)
+                    return self._run_transcription(audio_path, language, strategy, context=context)
                 except Exception as fallback_error:
                     logger.error(f"CPU fallback transcription also failed: {fallback_error}")
                     raise ASREngineError(f"ASR transcription failed after CPU fallback: {fallback_error}")
@@ -521,7 +586,13 @@ class FasterWhisperEngine(BaseASREngine):
             logger.debug(f"soundfile could not read {audio_path.name} ({error}); using PyAV decode.")
         return decode_audio(str(audio_path), sampling_rate=SAMPLE_RATE)
 
-    def _run_transcription(self, audio_path: Path, language: Optional[str], strategy: str) -> list[TranscriptSegment]:
+    def _run_transcription(
+        self,
+        audio_path: Path,
+        language: Optional[str],
+        strategy: str,
+        context: Optional[ASRContext] = None,
+    ) -> list[TranscriptSegment]:
         model = self.load_model()
         t_start = time.perf_counter()
         audio = self._load_audio(audio_path)
@@ -544,15 +615,17 @@ class FasterWhisperEngine(BaseASREngine):
 
         t_decode = time.perf_counter()
         if strategy == "batched":
-            results = self._decode_batched(model, audio, windows, language)
+            results = self._decode_batched(model, audio, windows, language, context=context)
         else:
-            results = self._decode_windowed(model, audio, windows, language)
+            results = self._decode_windowed(model, audio, windows, language, context=context)
         seconds_decode = time.perf_counter() - t_decode
 
         segments = self._materialize(results)
         self.last_window_results = results
         seconds_total = time.perf_counter() - t_start
-        self.last_run_stats = self._build_stats(strategy, windows, results, segments, audio_seconds, seconds_vad, seconds_decode, seconds_total)
+        self.last_run_stats = self._build_stats(
+            strategy, windows, results, segments, audio_seconds, seconds_vad, seconds_decode, seconds_total, context=context
+        )
 
         if not segments:
             logger.info("No intelligible speech detected in audio file.")
@@ -565,16 +638,32 @@ class FasterWhisperEngine(BaseASREngine):
 
     # ------------------------------------------------------------------ windowed strategy
 
-    def _decode_hypothesis(self, model: WhisperModel, features: np.ndarray, encoder_output, language: str, window: DecodeWindow, use_hotwords: bool = True) -> Hypothesis:
+    def _decode_hypothesis(
+        self,
+        model: WhisperModel,
+        features: np.ndarray,
+        encoder_output,
+        language: str,
+        window: DecodeWindow,
+        use_hotwords: bool = True,
+        context: Optional[ASRContext] = None,
+    ) -> Hypothesis:
         """Forced-language decode of one window from its cached encoder output; times made absolute."""
         tokenizer = Tokenizer(model.hf_tokenizer, model.model.is_multilingual, task="transcribe", language=language)
-        hotwords = hotwords_for(language) if (use_hotwords and settings.ASR_HOTWORDS_ENABLED) else None
+        hotwords = resolve_window_hotwords(language, context, tokenizer) if (use_hotwords and settings.ASR_HOTWORDS_ENABLED) else None
         options = build_transcription_options(tokenizer, hotwords)
         # encoder_output is honoured while seek == 0, i.e. for the whole window (<= 28 s < 30 s).
         segments = list(model.generate_segments(features, tokenizer, options, False, encoder_output=encoder_output))
         return Hypothesis(language=language, segments=stitch_segments(segments, window.start), hotwords=hotwords)
 
-    def _decode_windowed(self, model: WhisperModel, audio: np.ndarray, windows: list[DecodeWindow], forced_language: Optional[str]) -> list[WindowResult]:
+    def _decode_windowed(
+        self,
+        model: WhisperModel,
+        audio: np.ndarray,
+        windows: list[DecodeWindow],
+        forced_language: Optional[str],
+        context: Optional[ASRContext] = None,
+    ) -> list[WindowResult]:
         results: list[WindowResult] = []
         previous_language: Optional[str] = forced_language
         nb_max_frames = model.feature_extractor.nb_max_frames
@@ -594,15 +683,15 @@ class FasterWhisperEngine(BaseASREngine):
                     p1 = dict(ranking).get(previous_language, p1)
                     inherited = True
 
-            first = self._decode_hypothesis(model, features, encoder_output, acoustic_language, window)
+            first = self._decode_hypothesis(model, features, encoder_output, acoustic_language, window, context=context)
             echoed = hotword_echo(first.text, first.hotwords)
             if echoed:
-                first = self._decode_hypothesis(model, features, encoder_output, acoustic_language, window, use_hotwords=False)
+                first = self._decode_hypothesis(model, features, encoder_output, acoustic_language, window, use_hotwords=False, context=context)
             result = self._reconcile(window, ranking, acoustic_language, p1, inherited, first, forced=forced_language is not None)
             result.echo_redecoded = echoed
             if result.rescored is None:  # queued: second hypothesis from the same encoder output
                 alternative = self._alternative_language(result)
-                second = self._decode_hypothesis(model, features, encoder_output, alternative, window, use_hotwords=not echoed)
+                second = self._decode_hypothesis(model, features, encoder_output, alternative, window, use_hotwords=not echoed, context=context)
                 result = self._pick_rescored(result, second)
             results.append(result)
             previous_language = result.language if result.language in settings.WHISPER_LANGUAGES else previous_language
@@ -610,10 +699,17 @@ class FasterWhisperEngine(BaseASREngine):
 
     # ------------------------------------------------------------------ batched strategy
 
-    def _decode_batched(self, model: WhisperModel, audio: np.ndarray, windows: list[DecodeWindow], forced_language: Optional[str]) -> list[WindowResult]:
+    def _decode_batched(
+        self,
+        model: WhisperModel,
+        audio: np.ndarray,
+        windows: list[DecodeWindow],
+        forced_language: Optional[str],
+        context: Optional[ASRContext] = None,
+    ) -> list[WindowResult]:
         if not windows:
             return []
-        pipeline = MedparkBatchedPipeline(model, settings.WHISPER_LANGUAGES, forced_language, settings.ASR_HOTWORDS_ENABLED)
+        pipeline = MedparkBatchedPipeline(model, settings.WHISPER_LANGUAGES, forced_language, settings.ASR_HOTWORDS_ENABLED, context=context)
         tokenizer_language = forced_language or settings.WHISPER_LANGUAGES[0]
         options = {k: v for k, v in DECODE_OPTIONS.items() if k not in ("temperatures", "clip_timestamps", "multilingual", "suppress_tokens", "condition_on_previous_text", "prompt_reset_on_temperature", "max_initial_timestamp", "hallucination_silence_threshold")}
         options["beam_size"] = settings.WHISPER_BEAM_SIZE
@@ -648,7 +744,9 @@ class FasterWhisperEngine(BaseASREngine):
         followup: list[WindowResult] = []
         forced = forced_language is not None
         for window, lid in zip(windows, pipeline.chunk_lids):
-            hypothesis = Hypothesis(language=lid["language"], segments=per_window[window.index], hotwords=hotwords_for(lid["language"]) if settings.ASR_HOTWORDS_ENABLED else None)
+            tokenizer = Tokenizer(model.hf_tokenizer, model.model.is_multilingual, task="transcribe", language=lid["language"])
+            hotwords = resolve_window_hotwords(lid["language"], context, tokenizer) if settings.ASR_HOTWORDS_ENABLED else None
+            hypothesis = Hypothesis(language=lid["language"], segments=per_window[window.index], hotwords=hotwords)
             result = self._reconcile(window, lid["ranking"], lid["language"], lid["p1"], lid["inherited"], hypothesis, forced=forced)
             result.echo_redecoded = hotword_echo(hypothesis.text, hypothesis.hotwords)
             results.append(result)
@@ -662,11 +760,11 @@ class FasterWhisperEngine(BaseASREngine):
             features = model.feature_extractor(window.slice(audio))
             encoder_output = model.encode(pad_or_trim(features[..., :nb_max_frames]))
             if result.echo_redecoded:
-                first = self._decode_hypothesis(model, features, encoder_output, result.acoustic_language, window, use_hotwords=False)
+                first = self._decode_hypothesis(model, features, encoder_output, result.acoustic_language, window, use_hotwords=False, context=context)
                 result = self._reconcile(window, result.ranking, result.acoustic_language, result.acoustic_p1, result.inherited, first, forced=forced)
                 result.echo_redecoded = True
             if result.rescored is None:
-                second = self._decode_hypothesis(model, features, encoder_output, self._alternative_language(result), window, use_hotwords=not result.echo_redecoded)
+                second = self._decode_hypothesis(model, features, encoder_output, self._alternative_language(result), window, use_hotwords=not result.echo_redecoded, context=context)
                 result = self._pick_rescored(result, second)
             results[window.index] = result
         return results
@@ -755,17 +853,37 @@ class FasterWhisperEngine(BaseASREngine):
         segments: list[TranscriptSegment] = []
         for result in results:
             for seg in result.chosen.segments:
-                text = seg.text.strip()
-                if not text:
+                raw_decoder_text = seg.text.strip()
+                if not raw_decoder_text:
                     continue
                 corrections: list[dict] = []
-                if settings.ASR_LEXICON_ENABLED and result.language in ("ro", "ru", "en"):
-                    text, corrections = correct_segment(text, result.language)
+                normalized_text: str | None = None
+                normalization_version: str | None = None
+                text_to_normalize = raw_decoder_text
 
+                if settings.ASR_LEXICON_ENABLED and result.language in ("ro", "ru", "en"):
+                    corrected, raw_corrections = correct_segment(text_to_normalize, result.language)
+                    if corrected != text_to_normalize:
+                        text_to_normalize = corrected
+                        corrections.extend(raw_corrections)
+                        normalization_version = "lexicon_v1"
+
+                dialect_res = normalize_dialect(text_to_normalize, result.language)
+                if dialect_res.text != text_to_normalize:
+                    text_to_normalize = dialect_res.text
+                    corrections.extend(dialect_res.corrections)
+                    normalization_version = (
+                        f"{normalization_version}+dialect_v1" if normalization_version else "dialect_v1"
+                    )
+
+                if text_to_normalize != raw_decoder_text:
+                    normalized_text = text_to_normalize
+
+                effective_text = normalized_text or raw_decoder_text
                 spans = [s for s in result.spans if s["end"] > seg.start and s["start"] < seg.end] if result.spans else []
-                reason = result.flag_reason or garbage_reason(text, seg.avg_logprob, seg.compression_ratio, seg.no_speech_prob, seg.end - seg.start)
+                reason = result.flag_reason or garbage_reason(raw_decoder_text, seg.avg_logprob, seg.compression_ratio, seg.no_speech_prob, seg.end - seg.start)
                 if reason is None:
-                    is_flagged, reason = self._check_review_flags(text, seg.avg_logprob)
+                    is_flagged, reason = self._check_review_flags(effective_text, seg.avg_logprob)
                 else:
                     is_flagged = True
 
@@ -773,7 +891,10 @@ class FasterWhisperEngine(BaseASREngine):
                     start=seg.start,
                     end=max(seg.end, seg.start + 0.01),
                     speaker="Speaker 1",
-                    raw_text=text,
+                    raw_text=raw_decoder_text,
+                    normalized_text=normalized_text,
+                    raw_text_origin="decoder",
+                    normalization_version=normalization_version,
                     language=result.language,
                     language_confidence=result.language_confidence,
                     language_source=result.language_source,
@@ -790,7 +911,18 @@ class FasterWhisperEngine(BaseASREngine):
         segments.sort(key=lambda s: (s.start, s.end))
         return segments
 
-    def _build_stats(self, strategy, windows, results, segments, audio_seconds, seconds_vad, seconds_decode, seconds_total) -> dict[str, Any]:
+    def _build_stats(
+        self,
+        strategy,
+        windows,
+        results,
+        segments,
+        audio_seconds,
+        seconds_vad,
+        seconds_decode,
+        seconds_total,
+        context: Optional[ASRContext] = None,
+    ) -> dict[str, Any]:
         window_languages = {lang: 0 for lang in settings.WHISPER_LANGUAGES}
         for r in results:
             if r.language in window_languages:
@@ -825,6 +957,7 @@ class FasterWhisperEngine(BaseASREngine):
             "seconds_encode_decode": round(seconds_decode, 2),
             "seconds_total": round(seconds_total, 2),
             "audio_seconds": round(audio_seconds, 2),
+            "context_hotwords_applied": list(context.hotwords) if context and context.hotwords else [],
             "rtf": round(seconds_total / audio_seconds, 4) if audio_seconds > 0 else None,
         }
 

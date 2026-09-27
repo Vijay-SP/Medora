@@ -116,8 +116,57 @@ class RemoteASREngineTests(unittest.TestCase):
         self.assertEqual(segments[0].speaker, "Speaker 1")
         self.assertIsNone(segments[0].legacy_speaker_label)
         self.assertEqual(segments[0].raw_text, "Bună ziua.")
+        self.assertEqual(segments[0].raw_text_origin, "legacy_unknown")
+        self.assertEqual(segments[0].display_text, "Bună ziua.")
         self.assertEqual(engine.model_name, "large-v3-turbo")
         self.assertEqual(engine.device, "remote:metal")
+
+    def test_preserves_supported_remote_provenance(self) -> None:
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                return httpx.Response(202, json={"job_id": JOB_ID, "status": "queued"}, request=request)
+            return httpx.Response(
+                200,
+                json={
+                    "job_id": JOB_ID,
+                    "status": "completed",
+                    "result": {
+                        "segments": [
+                            {
+                                "id": "server-segment-prov",
+                                "start": 0.0,
+                                "end": 2.0,
+                                "speaker": "Untrusted",
+                                "raw_text": "Med Park",
+                                "normalized_text": "Medpark",
+                                "raw_text_origin": "decoder",
+                                "normalization_version": "lexicon_v1",
+                                "language": "ro",
+                                "confidence": 0.95,
+                            }
+                        ],
+                        "engine": "whisper_cpp",
+                        "model": "large-v3-turbo",
+                        "device": "metal",
+                        "duration_seconds": 2.0,
+                    },
+                },
+                request=request,
+            )
+
+        engine = RemoteASREngine(
+            "http://speech.local",
+            poll_interval_s=0,
+            transport=httpx.MockTransport(handler),
+        )
+        segments = engine.transcribe(_audio_file())
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0].raw_text, "Med Park")
+        self.assertEqual(segments[0].normalized_text, "Medpark")
+        self.assertEqual(segments[0].raw_text_origin, "decoder")
+        self.assertEqual(segments[0].normalization_version, "lexicon_v1")
+        self.assertEqual(segments[0].display_text, "Medpark")
+        self.assertEqual(segments[0].speaker, "Speaker 1")
 
 
 if __name__ == "__main__":

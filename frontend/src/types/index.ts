@@ -115,7 +115,14 @@ export interface Correction {
   was: string;
   now: string;
   score: number; // match score of the lexicon rule, not a probability
+  rule_id?: string | null;
+  source_span?: [number, number] | null;
+  target_span?: [number, number] | null;
+  stage?: string | null;
+  ruleset_version?: string | null;
 }
+
+export type RawTextOrigin = 'decoder' | 'legacy_unknown';
 
 export interface TranscriptSegment {
   id: string;
@@ -126,7 +133,10 @@ export interface TranscriptSegment {
   // instead carry a reviewer-assigned label (attribution_basis "reviewer_label") with no Person.
   speaker_id?: string | null;
   raw_text: string;
-  corrected_text?: string;
+  normalized_text?: string | null;
+  raw_text_origin?: RawTextOrigin;
+  normalization_version?: string | null;
+  corrected_text?: string | null;
   display_text: string;
   language: string; // ro | ru | en | mixed | und (older records may hold other whisper codes)
   confidence: number;
@@ -159,12 +169,85 @@ export interface TranscriptSegment {
   legacy_speaker_label?: string | null;
 }
 
+export type EditKind = 'transcription' | 'normalization' | 'translation' | 'redaction' | 'editorial';
+export type VerificationStatus = 'unverified' | 'verified' | 'rejected';
+export type CollectionStatus = 'collected' | 'ineligible' | 'retry_required';
+
+export interface CorrectionEvent {
+  id: string;
+  meeting_id: string;
+  segment_id: string;
+  transcript_revision: number;
+  request_id?: string | null;
+  edit_kind: EditKind;
+  previous_text: string;
+  new_text: string;
+  raw_text?: string | null;
+  normalized_text?: string | null;
+  raw_text_origin?: RawTextOrigin;
+  reviewer_label?: string | null;
+  created_at: string;
+  verified_against_audio: boolean;
+  training_reuse_allowed: boolean;
+  verification_status: VerificationStatus;
+  verified_by?: string | null;
+  verified_at?: string | null;
+  rejection_reason?: string | null;
+  audio_start?: number;
+  audio_end?: number;
+  audio_checksum?: string;
+  speaker_cluster?: string;
+  language?: string;
+}
+
+export interface LearningInboxCounts {
+  total_events: number;
+  unverified_events: number;
+  rejected_events: number;
+  distinct_verified_events: number;
+  distinct_verified_meetings: number;
+  distinct_verified_speakers: number;
+}
+
+export interface LearningInboxResponse {
+  counts: LearningInboxCounts;
+  eligible_audio_duration_seconds: number;
+  corrections: CorrectionEvent[];
+}
+
+export interface VerifyCorrectionPayload {
+  expected_revision: number;
+  audio_start: number;
+  audio_end: number;
+  edit_kind: EditKind;
+  reviewer_label: string;
+  verified_against_audio: boolean;
+  training_reuse_allowed: boolean;
+}
+
+export interface RejectCorrectionPayload {
+  reason: string;
+  reviewer_label?: string;
+}
+
 export interface Transcript {
   meeting_id: string;
+  revision?: number;
+  correction_events?: CorrectionEvent[];
   segments: TranscriptSegment[];
   languages_detected: string[];
   total_words: number;
   duration_seconds: number;
+}
+
+export function getSegmentDisplayText(seg: TranscriptSegment): string {
+  if (seg.corrected_text !== undefined && seg.corrected_text !== null) {
+    return seg.corrected_text;
+  }
+  if (seg.normalized_text !== undefined && seg.normalized_text !== null) {
+    return seg.normalized_text;
+  }
+  return seg.raw_text;
 }
 
 export interface EvidenceQuote {
@@ -258,6 +341,8 @@ export interface MinutesOfMeeting {
   // Provenance and review flags (optional so persisted pre-LLM payloads still type-check).
   is_degraded?: boolean; // heuristic fallback produced this document; backend refuses dispatch
   needs_name_review?: boolean; // a non-roster owner or a suspect proper noun exists
+  source_transcript_revision?: number | null;
+  needs_transcript_review?: boolean; // transcript was edited after minutes generation, minutes are stale
   failed_chunks?: number[]; // transcript chunk ordinals that failed extraction twice
   extraction_stats?: ExtractionStats;
   // "labels" = prose attributes to S<n> tokens that GET /minutes resolves to names/"Vorbitorul n";

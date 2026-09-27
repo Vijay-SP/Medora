@@ -17,6 +17,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 import uuid
 
+from app.models.adaptation import CorrectionEvent
 from app.models.meeting import _normalize_datetime
 
 ANONYMOUS_SPEAKER_PATTERN = re.compile(r"^Speaker \d+$")
@@ -50,11 +51,19 @@ class LanguageSpan(BaseModel):
     language: SpanLanguage
 
 
+RawTextOrigin = Literal["decoder", "legacy_unknown"]
+
+
 class Correction(BaseModel):
     """A lexicon substitution the ASR post-processor applied; `was` is the original decoder output."""
     was: str
     now: str
     score: float = Field(..., description="Match score of the lexicon rule that fired (not a probability)")
+    rule_id: Optional[str] = Field(None, description="Identifier of the rule that fired")
+    source_span: Optional[tuple[int, int]] = Field(None, description="Character span [start, end] in original text")
+    target_span: Optional[tuple[int, int]] = Field(None, description="Character span [start, end] in normalized text")
+    stage: Optional[str] = Field(None, description="Pipeline stage that applied the correction, e.g. 'lexicon', 'dialect'")
+    ruleset_version: Optional[str] = Field(None, description="Version of the normalization ruleset applied")
 
 
 class SpeakerSuggestion(BaseModel):
@@ -81,6 +90,12 @@ class TranscriptSegment(BaseModel):
     suggested_identity: Optional[str] = Field(None, description="Mirror of suggestion.person_name pending reviewer confirmation")
 
     raw_text: str = Field(..., description="Verbatim raw ASR output preserving original language")
+    normalized_text: Optional[str] = Field(None, description="Conservative normalized text (lexicon/dialect) if applied")
+    raw_text_origin: RawTextOrigin = Field(
+        default="legacy_unknown",
+        description="Provenance of raw_text: pristine decoder output vs legacy unknown",
+    )
+    normalization_version: Optional[str] = Field(None, description="Version of the normalization ruleset applied")
     corrected_text: Optional[str] = Field(None, description="Human reviewer correction if amended")
 
     language: str = Field(default="ro", description="Detected language code (ro, ru, en, mixed or und)")
@@ -180,8 +195,15 @@ class TranscriptSegment(BaseModel):
     @computed_field
     @property
     def display_text(self) -> str:
-        """Returns the reviewer-corrected text if present, otherwise raw ASR text."""
-        return self.corrected_text if self.corrected_text is not None else self.raw_text
+        """
+        Returns reviewer-corrected text if present (including intentional empty string deletion),
+        otherwise normalized text if present, otherwise raw ASR text.
+        """
+        if self.corrected_text is not None:
+            return self.corrected_text
+        if self.normalized_text is not None:
+            return self.normalized_text
+        return self.raw_text
 
     @computed_field
     @property
@@ -195,6 +217,11 @@ class TranscriptSegment(BaseModel):
 class Transcript(BaseModel):
     """Complete collection of transcript segments for a meeting."""
     meeting_id: str
+    revision: int = Field(default=1, description="Monotonically increasing transcript revision")
+    correction_events: list[CorrectionEvent] = Field(
+        default_factory=list,
+        description="Immutable audit trail of human edits and correction events"
+    )
     segments: list[TranscriptSegment] = Field(default_factory=list)
     languages_detected: list[str] = Field(default_factory=lambda: ["ro"])
     total_words: int = 0

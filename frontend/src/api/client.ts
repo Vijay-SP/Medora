@@ -16,6 +16,12 @@ import {
   SpeakersResponse,
   SpeakerCluster,
   SpeakerConfirmRequest,
+  TranscriptSegment,
+  EditKind,
+  CorrectionEvent,
+  LearningInboxResponse,
+  VerifyCorrectionPayload,
+  RejectCorrectionPayload,
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -138,8 +144,16 @@ export const apiClient = {
   async updateSegment(
     meetingId: string,
     segmentId: string,
-    update: { corrected_text?: string; speaker?: string }
-  ): Promise<void> {
+    update: {
+      corrected_text?: string;
+      speaker?: string;
+      is_flagged?: boolean;
+      expected_revision?: number;
+      request_id?: string;
+      edit_kind?: EditKind;
+      reviewer_label?: string;
+    }
+  ): Promise<TranscriptSegment> {
     const res = await fetchWithTimeout(
       `${API_BASE}/meetings/${meetingId}/transcript/segments/${segmentId}`,
       {
@@ -148,7 +162,8 @@ export const apiClient = {
         body: JSON.stringify(update),
       }
     );
-    if (!res.ok) throw new Error('Failed to update segment');
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update segment'));
+    return res.json();
   },
 
   // Minutes & Approval
@@ -389,6 +404,45 @@ export const apiClient = {
       }
     );
     if (!res.ok) throw new Error(await readErrorDetail(res, 'Speaker decision was not recorded'));
+    return res.json();
+  },
+
+  async refreshMinutes(meetingId: string): Promise<MinutesOfMeeting> {
+    const res = await fetchWithTimeout(`${API_BASE}/meetings/${meetingId}/minutes/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to refresh minutes'));
+    return res.json();
+  },
+
+  async getLearningCorrections(meetingId?: string, status?: string): Promise<LearningInboxResponse> {
+    const params = new URLSearchParams();
+    if (meetingId) params.append('meeting_id', meetingId);
+    if (status) params.append('status', status);
+    const query = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithTimeout(`${API_BASE}/learning/corrections${query}`);
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch learning corrections'));
+    return res.json();
+  },
+
+  async verifyCorrection(eventId: string, payload: VerifyCorrectionPayload): Promise<CorrectionEvent> {
+    const res = await fetchWithTimeout(`${API_BASE}/learning/corrections/${eventId}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to verify correction'));
+    return res.json();
+  },
+
+  async rejectCorrection(eventId: string, payload: RejectCorrectionPayload): Promise<CorrectionEvent> {
+    const res = await fetchWithTimeout(`${API_BASE}/learning/corrections/${eventId}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to reject correction'));
     return res.json();
   },
 };

@@ -13,9 +13,12 @@ import tempfile
 import threading
 from typing import Any, Optional
 
+from app.core.config import settings
 from app.core.exceptions import ASREngineError
 from app.models.transcript import Correction, TranscriptSegment
 from app.services.asr.base import BaseASREngine
+from app.services.asr.dynamic_context import ASRContext
+from app.services.asr.dialect_adapter import normalize_dialect
 from app.services.asr.glossary import MEDPARK_MEDICAL_VOCABULARY, build_code_switch_prompt
 from app.services.asr.lexicon import correct_segment
 from app.services.asr.text_lid import detect_text_language
@@ -102,10 +105,12 @@ class WhisperCppEngine(BaseASREngine):
         audio_path: Path,
         initial_prompt: Optional[str] = None,
         language: Optional[str] = None,
+        *,
+        context: Optional[ASRContext] = None,
     ) -> list[TranscriptSegment]:
         audio_path = Path(audio_path)
         self._assert_local_assets(audio_path)
-        prompt = initial_prompt or build_code_switch_prompt()
+        prompt = (context.prompt_seed if context and context.prompt_seed else None) or initial_prompt or build_code_switch_prompt()
 
         with tempfile.TemporaryDirectory(prefix="medora_whisper_cpp_") as temporary_directory:
             output_base = Path(temporary_directory) / "transcript"
@@ -246,14 +251,31 @@ class WhisperCppEngine(BaseASREngine):
                 lang_source = "text"
                 lang_conf = text_lid.confidence
 
-            # Clinical lexicon post-processing (recovers near-miss proper nouns & abbreviations)
-            cleaned_text, raw_corrections = correct_segment(text, seg_language)
-            corrections = [
-                Correction(was=c["was"], now=c["now"], score=c["score"])
-                for c in raw_corrections
-            ]
+            # Clinical lexicon & dialect post-processing (recovers near-miss proper nouns, abbreviations, regional terms)
+            raw_decoder_text = text
+            text_to_normalize = raw_decoder_text
+            all_corrections: list[Correction] = []
+            normalization_version: Optional[str] = None
 
-            is_flagged, flag_reason = self._check_review_flags(cleaned_text, average_log_probability)
+            if settings.ASR_LEXICON_ENABLED and seg_language in ("ro", "ru", "en"):
+                cleaned_text, raw_corrections = correct_segment(text_to_normalize, seg_language)
+                if cleaned_text != text_to_normalize:
+                    text_to_normalize = cleaned_text
+                    all_corrections.extend([Correction(was=c["was"], now=c["now"], score=c["score"]) for c in raw_corrections])
+                    normalization_version = "lexicon_v1"
+
+            dialect_res = normalize_dialect(text_to_normalize, seg_language)
+            if dialect_res.text != text_to_normalize:
+                text_to_normalize = dialect_res.text
+                all_corrections.extend([Correction(was=c["was"], now=c["now"], score=c["score"]) for c in dialect_res.corrections])
+                normalization_version = (
+                    f"{normalization_version}+dialect_v1" if normalization_version else "dialect_v1"
+                )
+
+            normalized_text = text_to_normalize if text_to_normalize != raw_decoder_text else None
+            corrections = all_corrections
+
+            is_flagged, flag_reason = self._check_review_flags(text_to_normalize, average_log_probability)
             if average_log_probability is None:
                 is_flagged = True
                 flag_reason = "ASR confidence unavailable"
@@ -262,7 +284,10 @@ class WhisperCppEngine(BaseASREngine):
                     start=round(start, 3),
                     end=round(end, 3),
                     speaker="Speaker 1",
-                    raw_text=cleaned_text,
+                    raw_text=raw_decoder_text,
+                    normalized_text=normalized_text,
+                    raw_text_origin="decoder",
+                    normalization_version=normalization_version,
                     language=seg_language,
                     confidence=round(confidence, 2),
                     language_confidence=round(lang_conf, 2),

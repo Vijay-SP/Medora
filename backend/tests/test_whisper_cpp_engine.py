@@ -98,6 +98,9 @@ def test_transcribe_uses_local_vad_json_and_safe_decoder_options(tmp_path: Path)
     assert run.call_args.kwargs["start_new_session"] is True
     assert segments[0].start == 0.12
     assert segments[0].end == 2.56
+    assert segments[0].raw_text == "Aprobăm CT-ul pe 12 octombrie."
+    assert segments[0].raw_text_origin == "decoder"
+    assert segments[0].display_text == "Aprobăm CT-ul pe 12 octombrie."
     assert segments[0].language == "ro"
     assert segments[0].speaker == "Speaker 1"
     assert segments[0].confidence == 0.85

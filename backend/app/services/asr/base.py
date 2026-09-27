@@ -5,6 +5,7 @@ Enables pluggable speech-to-text engines (faster-whisper, sherpa, whisper.cpp) w
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
 from app.models.transcript import TranscriptSegment
 
 
@@ -16,7 +17,9 @@ class BaseASREngine(ABC):
         self,
         audio_path: Path,
         initial_prompt: str | None = None,
-        language: str | None = None
+        language: str | None = None,
+        *,
+        context: Any | None = None
     ) -> list[TranscriptSegment]:
         """
         Transcribes the given 16kHz mono WAV file into a sequence of timestamped segments.

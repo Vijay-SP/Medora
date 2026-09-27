@@ -49,6 +49,12 @@ async def upload_audio(meeting_id: str, file: UploadFile = File(...)) -> Meeting
     previous_original = Path(meeting.original_audio_path) if meeting.original_audio_path else None
     if previous_original and previous_original != saved_path:
         previous_original.unlink(missing_ok=True)
+        # Replacing recording revokes training eligibility of previous intervals
+        try:
+            from app.services.learning.retention import invalidate_source
+            await run_in_threadpool(invalidate_source, meeting_id, "source_audio_replaced")
+        except Exception as exc:
+            logger.warning(f"Could not invalidate adaptation records on audio replacement: {exc}")
     if meeting.normalized_audio_path:
         Path(meeting.normalized_audio_path).unlink(missing_ok=True)
 

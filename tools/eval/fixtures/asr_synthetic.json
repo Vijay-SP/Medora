@@ -1,0 +1,197 @@
+{
+  "gold_manifest": {
+    "schema_version": "1.0.0",
+    "description": "Synthetic benchmark manifest for Medora ASR evaluation harness",
+    "recordings": [
+      {
+        "recording_id": "rec_001_ro",
+        "checksum_sha256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "duration_seconds": 12.0,
+        "sample_rate": 16000,
+        "pseudonymous_speaker_group": "group_a",
+        "split": "test",
+        "acoustic_condition": "clean",
+        "annotation_status": "verified",
+        "segments": [
+          {
+            "segment_id": "seg_001",
+            "start": 0.5,
+            "end": 6.0,
+            "speaker": "Speaker 1",
+            "language": "ro",
+            "verbatim_text": "Pacientul nu are alergie la penicilină și primește 4 mg noradrenalină.",
+            "entities": [
+              { "term": "penicilină", "category": "medication" },
+              { "term": "noradrenalină", "category": "medication" }
+            ],
+            "critical_facts": [
+              { "kind": "negation", "expected_token": "nu" },
+              { "kind": "dosage", "expected_token": "4 mg", "numeric_value": 4.0, "unit": "mg" }
+            ]
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_002_ru",
+        "checksum_sha256": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+        "duration_seconds": 10.0,
+        "sample_rate": 16000,
+        "pseudonymous_speaker_group": "group_b",
+        "split": "test",
+        "acoustic_condition": "far_field",
+        "annotation_status": "verified",
+        "segments": [
+          {
+            "segment_id": "seg_002",
+            "start": 1.0,
+            "end": 5.5,
+            "speaker": "Speaker 2",
+            "language": "ru",
+            "verbatim_text": "Гемодинамически нестабилен, давление не падает.",
+            "entities": [
+              { "term": "давление", "category": "vital_sign" }
+            ],
+            "critical_facts": [
+              { "kind": "negation", "expected_token": "не" }
+            ]
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_003_mixed",
+        "checksum_sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "duration_seconds": 15.0,
+        "sample_rate": 16000,
+        "pseudonymous_speaker_group": "group_a",
+        "split": "test",
+        "acoustic_condition": "clean",
+        "annotation_status": "verified",
+        "segments": [
+          {
+            "segment_id": "seg_003",
+            "start": 0.5,
+            "end": 8.0,
+            "speaker": "Speaker 1",
+            "language": "mixed",
+            "verbatim_text": "Trebuie să verificăm pacientul înainte de surgery, потому что CT-ul arată o leziune.",
+            "entities": [
+              { "term": "CT-ul", "category": "procedure" },
+              { "term": "surgery", "category": "procedure" }
+            ],
+            "critical_facts": []
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_004_silence",
+        "checksum_sha256": "0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff",
+        "duration_seconds": 5.0,
+        "sample_rate": 16000,
+        "pseudonymous_speaker_group": "group_c",
+        "split": "test",
+        "acoustic_condition": "clean",
+        "annotation_status": "verified",
+        "segments": [
+          {
+            "segment_id": "seg_004",
+            "start": 0.0,
+            "end": 5.0,
+            "speaker": "Speaker 1",
+            "language": "ro",
+            "verbatim_text": "",
+            "entities": [],
+            "critical_facts": []
+          }
+        ]
+      }
+    ]
+  },
+  "hypotheses_good": {
+    "schema_version": "1.0.0",
+    "model_id": "whisper-large-v3-candidate",
+    "runtime": "faster-whisper",
+    "hypotheses": [
+      {
+        "recording_id": "rec_001_ro",
+        "segments": [
+          {
+            "start": 0.5,
+            "end": 6.0,
+            "text": "Pacientul nu are alergie la penicilină și primește 4 mg noradrenalină."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_002_ru",
+        "segments": [
+          {
+            "start": 1.0,
+            "end": 5.5,
+            "text": "Гемодинамически нестабилен, давление не падает."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_003_mixed",
+        "segments": [
+          {
+            "start": 0.5,
+            "end": 8.0,
+            "text": "Trebuie să verificăm pacientul înainte de surgery, потому что CT-ul arată o leziune."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_004_silence",
+        "segments": []
+      }
+    ]
+  },
+  "hypotheses_bad_critical": {
+    "schema_version": "1.0.0",
+    "model_id": "whisper-regressed-candidate",
+    "runtime": "faster-whisper",
+    "hypotheses": [
+      {
+        "recording_id": "rec_001_ro",
+        "segments": [
+          {
+            "start": 0.5,
+            "end": 6.0,
+            "text": "Pacientul are alergie la penicilină și primește 40 mg noradrenalină."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_002_ru",
+        "segments": [
+          {
+            "start": 1.0,
+            "end": 5.5,
+            "text": "Гемодинамически нестабилен, давление падает."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_003_mixed",
+        "segments": [
+          {
+            "start": 0.5,
+            "end": 8.0,
+            "text": "Trebuie să verificăm pacientul înainte de operație, arată leziune."
+          }
+        ]
+      },
+      {
+        "recording_id": "rec_004_silence",
+        "segments": [
+          {
+            "start": 1.0,
+            "end": 3.0,
+            "text": "Mulțumesc mult pentru atenție."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -228,6 +228,8 @@ def update_minutes(meeting_id: str, updated_minutes: MinutesOfMeeting) -> Minute
     updated_minutes.model_version = stored_minutes.model_version
     updated_minutes.failed_chunks = list(stored_minutes.failed_chunks)
     updated_minutes.extraction_stats = dict(stored_minutes.extraction_stats)
+    updated_minutes.source_transcript_revision = stored_minutes.source_transcript_revision
+    updated_minutes.needs_transcript_review = stored_minutes.needs_transcript_review
     # The token form of the stored prose is server-owned as well; names resolved for display go back to tokens.
     updated_minutes.speaker_label_style = stored_minutes.speaker_label_style
     edited = _restore_stored_tokens(updated_minutes, stored_minutes, _transcript_for(meeting_id))
@@ -356,4 +358,45 @@ async def translate_minutes(
     from app.services.translation.translation_service import translation_service
     updated = await translation_service.translate_mom(minutes, target_lang=target_lang, force_refresh=force)
     return _resolved(updated)
+
+
+@router.post("/minutes/refresh", response_model=MinutesOfMeeting)
+async def refresh_minutes(meeting_id: str) -> MinutesOfMeeting:
+    """
+    Regenerates Minutes of Meeting through the extraction engine using the current transcript.
+    Clears needs_transcript_review flag, advances minutes revision, and invalidates previous approval.
+    Does not automatically approve or send.
+    """
+    meeting = repository.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+
+    transcript = repository.get_transcript(meeting_id)
+    if not transcript:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transcript not found for this meeting")
+
+    from app.services.extraction.extractor import extraction_engine
+
+    minutes = await extraction_engine.extract_minutes(meeting, transcript)
+    minutes.source_transcript_revision = transcript.revision
+    minutes.needs_transcript_review = False
+    minutes.revision = meeting.current_revision + 1
+    meeting.current_revision = minutes.revision
+
+    # Invalidate prior approval for the new revision
+    meeting.review_status = ReviewStatus.PENDING_REVIEW
+    meeting.approved_by = None
+    meeting.approved_at = None
+
+    pdf_path, docx_path = file_manager.get_export_paths(meeting.id, revision=minutes.revision)
+    document_generator.generate_all(meeting, minutes, pdf_path, docx_path, transcript=transcript)
+
+    minutes.pdf_path = str(pdf_path)
+    minutes.docx_path = str(docx_path)
+
+    repository.save_meeting(meeting)
+    repository.save_minutes(minutes)
+    logger.info(f"Minutes for meeting {meeting_id} refreshed to Rev.{minutes.revision} against transcript Rev.{transcript.revision}")
+    return _resolved(minutes)
+
 

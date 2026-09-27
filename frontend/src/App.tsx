@@ -17,6 +17,7 @@ import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { WaveformPlayerRef } from './components/WaveformPlayer';
 import { PeoplePage } from './components/voice/PeoplePage';
 import { SpeakerConfirmationPanel } from './components/voice/SpeakerConfirmationPanel';
+import { LearningCenter } from './components/learning/LearningCenter';
 import { Trash2, AlertCircle } from 'lucide-react';
 
 // Workspace tabs. 'speakers' exists only while /ready reports voice identification as enabled.
@@ -606,6 +607,8 @@ export const App: React.FC = () => {
         return 'Live Meeting Room (Conference Mic)';
       case 'people':
         return 'People & Voices (Speaker Enrolment & Consent)';
+      case 'learning':
+        return 'Adaptation & Verification Learning Center';
       case 'deliveries':
         return 'Email Governance & Deliveries';
       case 'settings':
@@ -833,7 +836,18 @@ export const App: React.FC = () => {
           {/* Page 4: Deliveries & Outbox */}
           {view === 'workspace' && currentPage === 'deliveries' && <DeliveriesView onDeliveryChanged={refreshDeliveryState} />}
 
-          {/* Page 5: System & Settings */}
+          {/* Page 5: Adaptation & Learning Center */}
+          {view === 'workspace' && currentPage === 'learning' && (
+            <LearningCenter
+              onBack={() => setCurrentPage('dashboard')}
+              onSelectMeeting={(meetingId) => {
+                handleSelectMeeting(meetingId);
+                setCurrentPage('workspace');
+              }}
+            />
+          )}
+
+          {/* Page 6: System & Settings */}
           {view === 'workspace' && currentPage === 'settings' && <SettingsView />}
         </main>
       </div>

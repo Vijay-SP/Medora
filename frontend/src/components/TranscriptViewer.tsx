@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TranscriptSegment, LanguageSpan } from '../types';
+import { TranscriptSegment, LanguageSpan, getSegmentDisplayText } from '../types';
 import { useToast } from './Toast';
 import {
   Play,
@@ -150,7 +150,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       // Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const text = (seg.display_text || seg.corrected_text || seg.raw_text).toLowerCase();
+        const text = getSegmentDisplayText(seg).toLowerCase();
         const speaker = seg.speaker.toLowerCase();
         return text.includes(q) || speaker.includes(q);
       }
@@ -160,7 +160,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
   const startEdit = (seg: TranscriptSegment) => {
     setEditingId(seg.id);
-    setEditText(seg.display_text || seg.corrected_text || seg.raw_text);
+    setEditText(getSegmentDisplayText(seg));
   };
 
   const cancelEdit = () => {
@@ -169,7 +169,6 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   };
 
   const saveEdit = async (segId: string) => {
-    if (!editText.trim()) return;
     setIsSaving(true);
     try {
       await onUpdateSegment(segId, editText.trim());
@@ -191,7 +190,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
           `[${formatTimestamp(s.start)} - ${formatTimestamp(s.end)}] ${s.speaker} (${getLanguageLabel(
             s.language,
             s.language_spans
-          )}): ${s.display_text || s.corrected_text || s.raw_text}`
+          )}): ${getSegmentDisplayText(s)}`
       )
       .join('\n');
 
@@ -384,7 +383,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
       >
         {filteredSegments.map((seg) => {
           const isActive = activeSegmentId === seg.id;
-          const contentText = seg.display_text || seg.corrected_text || seg.raw_text;
+          const contentText = getSegmentDisplayText(seg);
           const isLowConfidence = typeof seg.confidence === 'number' && seg.confidence < 0.8;
 
           return (
@@ -518,7 +517,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                       </button>
                       <button
                         onClick={() => saveEdit(seg.id)}
-                        disabled={isSaving || !editText.trim()}
+                        disabled={isSaving}
                         className="inline-flex items-center space-x-1 px-3 py-1 bg-medpark-500 text-white font-semibold rounded hover:bg-medpark-600 shadow-sm disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-medpark-500/50 focus-visible:ring-offset-1"
                       >
                         {isSaving ? (
@@ -532,18 +531,39 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
                   </div>
                 </div>
               ) : (
-                <p lang={seg.language} className="text-sm text-slate-800 leading-relaxed pl-1 pt-0.5">
-                  {renderHighlightedText(contentText, searchQuery)}
-                  {seg.corrected_text && (
-                    <span
-                      lang="en"
-                      className="ml-2 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider whitespace-nowrap"
-                      title={`Human-corrected. Original recognition: ${seg.raw_text}`}
-                    >
-                      Corrected
-                    </span>
+                <div className="pl-1 pt-0.5 space-y-1">
+                  <p lang={seg.language} className="text-sm text-slate-800 leading-relaxed">
+                    {seg.corrected_text === '' ? (
+                      <span className="italic text-slate-400 text-xs">[Utterance removed by reviewer]</span>
+                    ) : (
+                      renderHighlightedText(contentText, searchQuery)
+                    )}
+                    {seg.corrected_text !== undefined && seg.corrected_text !== null && (
+                      <span
+                        lang="en"
+                        className="ml-2 text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider whitespace-nowrap"
+                        title={`Human-corrected. Original recognition: ${seg.raw_text}`}
+                      >
+                        Corrected
+                      </span>
+                    )}
+                  </p>
+                  {(seg.raw_text !== contentText || seg.normalized_text) && (
+                    <details className="text-[11px] text-slate-500 pt-0.5">
+                      <summary className="cursor-pointer hover:text-slate-700 select-none inline-flex items-center space-x-1">
+                        <span>Original recognition ({seg.raw_text_origin || 'legacy_unknown'})</span>
+                      </summary>
+                      <div className="mt-1 pl-2 border-l-2 border-slate-300 font-mono text-[11px] text-slate-600 bg-slate-100/60 p-1.5 rounded">
+                        <div><span className="font-semibold text-slate-500">Decoder:</span> {seg.raw_text}</div>
+                        {seg.normalized_text && (
+                          <div className="text-[10px] text-sky-700 mt-0.5 font-sans">
+                            <span className="font-semibold">Normalized ({seg.normalization_version || 'lexicon'}):</span> {seg.normalized_text}
+                          </div>
+                        )}
+                      </div>
+                    </details>
                   )}
-                </p>
+                </div>
               )}
             </div>
           );

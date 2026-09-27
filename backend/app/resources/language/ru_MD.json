@@ -1,0 +1,37 @@
+{
+  "version": "2026.09-v1",
+  "language": "ru",
+  "description": "Moldovan Russian clinical and administrative dialect normalization rules",
+  "rules": [
+    {
+      "id": "ru_md_spravka_01",
+      "language": "ru",
+      "variants": ["справка", "медицинская справка"],
+      "canonical": "медицинская справка",
+      "scope": "administrative",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ru_md_medpark_01",
+      "language": "ru",
+      "variants": ["мед парк", "мед-парк", "мэдпарк"],
+      "canonical": "Медпарк",
+      "scope": "proper_noun",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ru_md_poliklinika_suggest_01",
+      "language": "ru",
+      "variants": ["поликлиника", "поликлинику"],
+      "canonical": "амбулатория",
+      "scope": "administrative",
+      "action": "suggest_only",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    }
+  ]
+}

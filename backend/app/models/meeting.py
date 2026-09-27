@@ -80,6 +80,7 @@ class MeetingBase(BaseModel):
     scheduled_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     attendees: list[Attendee] = Field(default_factory=list)
     agenda: Optional[str] = Field(None, description="Optional meeting topics or medical agenda")
+    asr_department: Optional[str] = Field(None, description="Hospital department to bias ASR vocabulary, e.g. Cardiologie, Chirurgie")
     distribution_list: list[str] = Field(default_factory=list, description="Custom recipient emails (if overriding policy)")
 
     @field_validator("scheduled_at", mode="before")

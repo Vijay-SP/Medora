@@ -156,7 +156,11 @@ class PipelineOrchestrator:
             # the block early, releasing the lock.
             async with _GPU_STAGE_LOCK:
                 asr_engine = get_asr_engine()
-                segments = await asyncio.to_thread(asr_engine.transcribe, normalized_path)
+                from app.services.asr.dynamic_context import build_context
+                asr_context = build_context(meeting)
+                if asr_context.terms:
+                    logger.info(f"ASR context applied: {len(asr_context.terms)} terms, {len(asr_context.hotwords)} hotwords")
+                segments = await asyncio.to_thread(asr_engine.transcribe, normalized_path, context=asr_context)
                 await asyncio.to_thread(asr_engine.release_model)
 
                 # Recorded after the run so a CPU fallback taken inside the engine is visible in the audit,
@@ -191,7 +195,9 @@ class PipelineOrchestrator:
                         action_items=[],
                         risks_and_questions=[],
                         revision=self._next_revision(meeting),
-                        model_version="no-speech-detected"
+                        model_version="no-speech-detected",
+                        source_transcript_revision=1,
+                        needs_transcript_review=False,
                     )
                     repository.save_minutes(minutes)
 
@@ -255,6 +261,8 @@ class PipelineOrchestrator:
 
                 minutes = await extraction_engine.extract_minutes(meeting, transcript)
 
+            minutes.source_transcript_revision = transcript.revision
+            minutes.needs_transcript_review = False
             minutes.revision = self._next_revision(meeting)
             repository.save_minutes(minutes)
 

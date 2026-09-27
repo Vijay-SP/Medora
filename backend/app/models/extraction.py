@@ -95,6 +95,14 @@ class MinutesOfMeeting(BaseModel):
     # Extraction provenance and audit flags (all defaulted so persisted JSON keeps loading)
     is_degraded: bool = Field(default=False, description="Heuristic fallback produced this document; not dispatchable")
     needs_name_review: bool = Field(default=False, description="A non-roster owner or a suspect proper noun exists")
+    source_transcript_revision: Optional[int] = Field(
+        default=None,
+        description="The transcript revision from which these minutes were extracted"
+    )
+    needs_transcript_review: bool = Field(
+        default=False,
+        description="True when transcript was edited after minutes generation, rendering minutes stale"
+    )
     failed_chunks: list[int] = Field(default_factory=list, description="Transcript chunk ordinals that failed extraction twice")
     extraction_stats: dict[str, Any] = Field(
         default_factory=dict,

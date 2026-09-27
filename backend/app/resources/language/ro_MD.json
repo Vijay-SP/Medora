@@ -1,0 +1,67 @@
+{
+  "version": "2026.09-v1",
+  "language": "ro",
+  "description": "Moldovan regional Romanian clinical and administrative dialect normalization rules",
+  "rules": [
+    {
+      "id": "ro_md_policlinica_01",
+      "language": "ro",
+      "variants": ["policlinică", "policlinica"],
+      "canonical": "ambulatoriu",
+      "scope": "administrative",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ro_md_bolnita_01",
+      "language": "ro",
+      "variants": ["bolniță", "bolnita"],
+      "canonical": "spital",
+      "scope": "administrative",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ro_md_lekarstvo_01",
+      "language": "ro",
+      "variants": ["lekarstvo", "lecarstvo"],
+      "canonical": "medicament",
+      "scope": "clinical",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ro_md_sprafca_01",
+      "language": "ro",
+      "variants": ["sprafcă", "sprafca", "spravcă", "spravca"],
+      "canonical": "adeverință medicală",
+      "scope": "administrative",
+      "action": "safe_replace",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ro_md_analiza_ambiguous_01",
+      "language": "ro",
+      "variants": ["a dat la analiză", "a dat la analiza"],
+      "canonical": "a trimis la analize",
+      "scope": "clinical",
+      "action": "suggest_only",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    },
+    {
+      "id": "ro_md_curpa_ambiguous_01",
+      "language": "ro",
+      "variants": ["curpă", "curpa"],
+      "canonical": "perfuzie",
+      "scope": "clinical",
+      "action": "suggest_only",
+      "version": "2026.09-v1",
+      "approval": "approved"
+    }
+  ]
+}

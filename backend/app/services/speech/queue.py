@@ -277,10 +277,19 @@ class SpeechQueue:
         initial_prompt = job["initial_prompt"]
 
         try:
+            asr_ctx = None
+            if initial_prompt:
+                try:
+                    from app.services.asr.dynamic_context import ASRContext
+                    asr_ctx = ASRContext(prompt_seed=initial_prompt)
+                except Exception:
+                    asr_ctx = None
+
             segments: list[TranscriptSegment] = self.engine.transcribe(
                 audio_path,
                 initial_prompt=initial_prompt,
                 language=language,
+                context=asr_ctx,
             )
 
             # Calculate total duration
