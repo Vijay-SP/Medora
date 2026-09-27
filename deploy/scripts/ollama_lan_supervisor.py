@@ -74,19 +74,19 @@ class Supervisor:
         self.address = None
         self.failures = 0
 
-    def tick(self, address, healthy=None):
+    def tick(self, address=None, healthy=None):
         if self.process is not None:
             if healthy is not None:
                 self.failures = 0 if healthy else self.failures + 1
-            if (address != self.address or self.process.poll() is not None
-                    or self.failures >= HEALTH_FAILURE_LIMIT):
+            if self.process.poll() is not None or self.failures >= HEALTH_FAILURE_LIMIT:
                 self.stop()
-        if address and self.process is None:
+        if self.process is None:
             env = os.environ.copy()
-            env["OLLAMA_HOST"] = f"{address}:11434"
-            print(f"Starting Ollama on {address}:11434", flush=True)
+            env["OLLAMA_HOST"] = "0.0.0.0:11434"
+            env["OLLAMA_ORIGINS"] = "*"
+            print(f"Starting Ollama on 0.0.0.0:11434 (LAN: {address})", flush=True)
             self.process = subprocess.Popen(self.command, env=env, start_new_session=True)
-            self.address = address
+            self.address = "0.0.0.0"
             self.failures = 0
 
 
@@ -104,8 +104,8 @@ def main():
         while not stopped.is_set():
             address = interface_address(args.interface)
             healthy = None
-            if address and address == server.address and server.process.poll() is None:
-                healthy = api_healthy(address)
+            if server.process and server.process.poll() is None:
+                healthy = api_healthy("127.0.0.1")
             if stopped.is_set():
                 break
             server.tick(address, healthy)
