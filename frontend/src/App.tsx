@@ -16,7 +16,7 @@ import { DeliveryOutboxDrawer } from './components/DeliveryOutboxDrawer';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { WaveformPlayerRef } from './components/WaveformPlayer';
 import { PeoplePage } from './components/voice/PeoplePage';
-import { SpeakerConfirmationPanel } from './components/voice/SpeakerConfirmationPanel';
+import { SpeakerAssignmentCard } from './components/voice/SpeakerAssignmentCard';
 import { LearningCenter } from './components/learning/LearningCenter';
 import { FloatingAssistantDrawer } from './components/assistant/FloatingAssistantDrawer';
 import { Trash2, AlertCircle } from 'lucide-react';
@@ -772,21 +772,19 @@ export const App: React.FC = () => {
               pipelineProgress={pipelineProgress}
               pipelineStage={pipelineStage}
               stageDetail={stageDetail}
-              activeTab={activeTab === 'speakers' ? 'minutes' : activeTab}
+              activeTab={activeTab}
               setActiveTab={setActiveTab}
-              showSpeakersTab={false}
+              showSpeakersTab={true}
               speakersPanel={
                 selectedMeeting ? (
-                  <SpeakerConfirmationPanel
+                  <SpeakerAssignmentCard
                     meetingId={selectedMeeting.id}
                     revision={minutes?.revision ?? null}
                     attendees={selectedMeeting.attendees}
-                    onSeek={handlePlayRange}
-                    currentTime={playbackTime}
-                    reloadKey={speakersReloadKey}
                     onAttributionChanged={() => {
                       loadMeetingData(selectedMeeting.id);
                       loadMeetings();
+                      setSpeakersReloadKey((k) => k + 1);
                     }}
                   />
                 ) : null
