@@ -18,10 +18,11 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react';
-import { Meeting } from '../types';
+import { Meeting, DeliveryRecord } from '../types';
 
 interface DashboardViewProps {
   meetings: Meeting[];
+  deliveries?: DeliveryRecord[];
   selectedMeetingId: string | null;
   onSelectMeeting: (id: string) => void;
   onOpenWorkspace: (id: string) => void;
@@ -40,6 +41,7 @@ const REVIEW_STATUS_META: Record<string, { label: string; badge: string }> = {
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   meetings,
+  deliveries = [],
   selectedMeetingId,
   onSelectMeeting,
   onOpenWorkspace,
@@ -52,7 +54,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const pendingCount = meetings.filter(
     (m) => m.review_status === 'pending_review' || m.review_status === 'draft'
   ).length;
-  const deliveredCount = meetings.filter((m) => m.review_status === 'delivered').length;
+
+  const dispatchedDeliveries = (deliveries || []).filter((d) => d.status === 'dispatched');
+  const deliveredMeetingIds = new Set(dispatchedDeliveries.map((d) => d.meeting_id));
+  const deliveredCount = (deliveries && deliveries.length > 0)
+    ? dispatchedDeliveries.length
+    : meetings.filter((m) => m.review_status === 'delivered' || deliveredMeetingIds.has(m.id)).length;
 
   // Recent 4 meetings for the executive preview
   const recentMeetings = [...meetings]

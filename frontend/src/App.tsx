@@ -716,6 +716,7 @@ export const App: React.FC = () => {
           {view === 'workspace' && currentPage === 'dashboard' && (
             <DashboardView
               meetings={meetings}
+              deliveries={deliveries}
               selectedMeetingId={selectedMeetingId}
               onSelectMeeting={handleSelectMeeting}
               onOpenWorkspace={(id) => {
