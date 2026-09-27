@@ -285,11 +285,18 @@ class SpeechQueue:
                 except Exception:
                     asr_ctx = None
 
+            transcribe_kwargs = {
+                "initial_prompt": initial_prompt,
+                "language": language,
+            }
+            import inspect
+            sig = inspect.signature(self.engine.transcribe)
+            if "context" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+                transcribe_kwargs["context"] = asr_ctx
+
             segments: list[TranscriptSegment] = self.engine.transcribe(
                 audio_path,
-                initial_prompt=initial_prompt,
-                language=language,
-                context=asr_ctx,
+                **transcribe_kwargs,
             )
 
             # Calculate total duration

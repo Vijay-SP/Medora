@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 from pathlib import Path
@@ -271,10 +272,10 @@ def get_default_settings() -> SpeechSettings:
         data_dir=Path(os.environ.get("SPEECH_DATA_DIR", str(base_dir / "data" / "speech"))),
         max_pending_jobs=int(os.environ.get("SPEECH_MAX_PENDING_JOBS", 10)),
         max_upload_bytes=int(os.environ.get("SPEECH_MAX_UPLOAD_BYTES", 500_000_000)),
-        api_key=os.environ.get("SPEECH_API_KEY") or None,
-        binary_path=Path(os.environ.get("WHISPER_CPP_BINARY", str(settings.WHISPER_CPP_BINARY))),
-        model_path=Path(os.environ.get("WHISPER_CPP_MODEL", str(settings.WHISPER_CPP_MODEL))),
-        vad_model_path=Path(os.environ.get("WHISPER_CPP_VAD_MODEL", str(settings.WHISPER_CPP_VAD_MODEL))),
+        api_key=os.environ.get("SPEECH_API_KEY") or os.environ.get("SPEECH_SERVER_BEARER_TOKEN") or None,
+        binary_path=Path(os.environ.get("WHISPER_CPP_BINARY") or os.environ.get("WHISPER_CPP_BINARY_PATH") or str(settings.WHISPER_CPP_BINARY)),
+        model_path=Path(os.environ.get("WHISPER_CPP_MODEL") or os.environ.get("WHISPER_CPP_MODEL_PATH") or str(settings.WHISPER_CPP_MODEL)),
+        vad_model_path=Path(os.environ.get("WHISPER_CPP_VAD_MODEL") or os.environ.get("WHISPER_CPP_VAD_MODEL_PATH") or str(settings.WHISPER_CPP_VAD_MODEL)),
         threads=int(os.environ.get("WHISPER_CPP_THREADS", settings.WHISPER_CPP_THREADS)),
         use_gpu=os.environ.get("WHISPER_CPP_USE_GPU", str(settings.WHISPER_CPP_USE_GPU)).lower() in ("true", "1"),
     )
